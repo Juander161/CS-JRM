@@ -2,7 +2,14 @@ import React from 'react';
 import Card from '../../../components/Card.jsx';
 import { usePermission } from '../../../context/PermissionsContext.jsx';
 
-export default function ThresholdConfig({ umbral, onUmbralChange, margenDias, onMargenDiasChange }) {
+export default function ThresholdConfig({
+  umbral,
+  onUmbralChange,
+  margenDias,
+  onMargenDiasChange,
+  margenAmbar,
+  onMargenAmbarChange,
+}) {
   const puedeConfigurar = usePermission('orderApproval', 'configureThreshold');
 
   return (
@@ -19,6 +26,20 @@ export default function ThresholdConfig({ umbral, onUmbralChange, margenDias, on
             onChange={(e) => onUmbralChange(Number(e.target.value))}
           />
           <span className="hint">Solicitado ÷ disponible por debajo de este % = Aprobado</span>
+        </div>
+        <div className="field">
+          <label>Zona ámbar antes del umbral (puntos %)</label>
+          <input
+            type="number"
+            min="0"
+            max="30"
+            value={margenAmbar}
+            disabled={!puedeConfigurar}
+            onChange={(e) => onMargenAmbarChange(Number(e.target.value))}
+          />
+          <span className="hint">
+            Ej. con umbral 30% y zona 7: de 23% a 30% = Revisar en vez de Aprobado directo
+          </span>
         </div>
         <div className="field">
           <label>Días mínimos antes del RDD</label>

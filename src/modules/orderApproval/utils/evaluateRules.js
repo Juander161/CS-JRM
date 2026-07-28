@@ -3,9 +3,15 @@
 //
 // 3.1 Regla de RDD: si la fecha RDD está a menos de N días (por defecto 3)
 //     de la fecha actual, la solicitud se marca para rechazo automático.
+//     Si el RDD no se pudo interpretar del texto pegado, NO se asume nada:
+//     se marca "Revisar" para que alguien lo confirme a mano, en vez de
+//     dejar pasar silenciosamente un caso que debería rechazarse.
 // 3.2 Regla de comparación de inventario: % = cantidad solicitada / cantidad
 //     disponible. Si el % es menor al umbral configurado -> Aprobado, si lo
 //     supera -> Rechazado. El umbral es configurable (por defecto 30%).
+//     Los casos que caen justo debajo del umbral (dentro del margen "ámbar"
+//     configurable) se marcan "Revisar" en vez de Aprobado automático, para
+//     que no pasen desapercibidos casos límite.
 //
 // ⚠ Pendiente de confirmar: si el margen de días RDD depende del destino, y
 // si el umbral debe considerar también la demanda/consumo reciente (10%
@@ -21,8 +27,13 @@ export function diasHastaRdd(rddDate, hoy = new Date()) {
   return Math.round((rddDate.getTime() - hoyUTC) / MS_POR_DIA);
 }
 
-export function evaluarItem(item, inventario, { umbralPorcentaje, margenDiasRdd, rdd, ahora }) {
+export function evaluarItem(
+  item,
+  inventario,
+  { umbralPorcentaje, margenDiasRdd, margenAmbarPorcentaje = 0, rdd, rddRaw, ahora }
+) {
   const dias = diasHastaRdd(rdd, ahora);
+  const rddNoLegible = rdd === null;
   const rddEnRiesgo = dias !== null && dias < margenDiasRdd;
 
   const infoInventario = inventario.get(item.itemCode.toUpperCase());
@@ -34,7 +45,10 @@ export function evaluarItem(item, inventario, { umbralPorcentaje, margenDiasRdd,
   let estado;
   let motivo = '';
 
-  if (rddEnRiesgo) {
+  if (rddNoLegible) {
+    estado = 'Revisar';
+    motivo = `No se pudo interpretar la fecha RDD ("${rddRaw}"); confirma manualmente el margen de días antes de aprobar.`;
+  } else if (rddEnRiesgo) {
     estado = 'Rechazado';
     motivo = `RDD a ${dias} día(s) (mínimo requerido: ${margenDiasRdd})`;
   } else if (disponible === null) {
@@ -46,11 +60,16 @@ export function evaluarItem(item, inventario, { umbralPorcentaje, margenDiasRdd,
   } else {
     porcentajeConsumo = item.qty / disponible;
     if (demanda) porcentajeSobreDemanda = item.qty / demanda;
-    if (porcentajeConsumo < umbralPorcentaje) {
-      estado = 'Aprobado';
-    } else {
+    const umbralAmbar = umbralPorcentaje - margenAmbarPorcentaje;
+
+    if (porcentajeConsumo >= umbralPorcentaje) {
       estado = 'Rechazado';
       motivo = `Consumo ${(porcentajeConsumo * 100).toFixed(1)}% supera el umbral (${(umbralPorcentaje * 100).toFixed(0)}%)`;
+    } else if (margenAmbarPorcentaje > 0 && porcentajeConsumo >= umbralAmbar) {
+      estado = 'Revisar';
+      motivo = `Consumo ${(porcentajeConsumo * 100).toFixed(1)}% está cerca del umbral (${(umbralPorcentaje * 100).toFixed(0)}%); revisar manualmente antes de aprobar.`;
+    } else {
+      estado = 'Aprobado';
     }
   }
 
@@ -69,7 +88,7 @@ export function evaluarItem(item, inventario, { umbralPorcentaje, margenDiasRdd,
 
 export function evaluarSolicitud(solicitud, inventario, opciones) {
   const items = solicitud.items.map((item) =>
-    evaluarItem(item, inventario, { ...opciones, rdd: solicitud.rdd })
+    evaluarItem(item, inventario, { ...opciones, rdd: solicitud.rdd, rddRaw: solicitud.rddRaw })
   );
   return { ...solicitud, items };
 }

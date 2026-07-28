@@ -3,6 +3,7 @@ import React from 'react';
 const TONE_CLASSNAMES = {
   success: 'badge badge-success',
   danger: 'badge badge-danger',
+  warning: 'badge badge-warning',
   neutral: 'badge badge-neutral',
 };
 

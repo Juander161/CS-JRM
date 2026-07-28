@@ -184,6 +184,11 @@ th {
   color: #b91c1c;
 }
 
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .badge-neutral {
   background: #e2e8f0;
   color: #334155;

@@ -11,6 +11,12 @@
 // Los correos con preguntas específicas (fuera de este formato con BO#)
 // quedan fuera de esta primera fase, tal como se definió en el documento de
 // reglas de negocio: no se intentan interpretar aquí.
+//
+// ⚠ El formato puede variar entre reps (espacios, mayúsculas/minúsculas,
+// orden de campos). Las expresiones regulares de abajo ya toleran espacios
+// extra y mayúsculas/minúsculas, pero cualquier línea que no encaje se
+// reporta en `lineasNoReconocidas` (global) o `solicitud.lineasNoReconocidas`
+// en vez de fallar en silencio, para poder ajustarlas con correos reales.
 
 const MESES = {
   ENE: 0, JAN: 0,
@@ -30,6 +36,10 @@ const MESES = {
 const HEADER_REGEX =
   /PRDF:\s*RDD\s*([^,]+),\s*Event Date\s*([^,]+),\s*(.+?),\s*Rep\s+(.+?),\s*BO#\s*(\S+)/i;
 
+// Para detectar líneas que "parecen" encabezado (empiezan con PRDF) pero no
+// encajaron del todo con HEADER_REGEX, y así avisar en vez de perderlas.
+const PARECE_HEADER_REGEX = /^PRDF\s*:/i;
+
 const ITEM_REGEX = /Item\s*\[([^\]]*)\]\s*Qty\s*\[([^\]]*)\]\s*Description\s*\[([^\]]*)\]/i;
 
 export function parseRddDate(rddRaw) {
@@ -44,13 +54,34 @@ export function parseRddDate(rddRaw) {
   return new Date(Date.UTC(anio, mes, dia));
 }
 
+// Combina líneas de artículo con el mismo código de Item dentro de la misma
+// solicitud, sumando la cantidad en vez de dejarlas como renglones separados
+// (pasa seguido: el mismo Item aparece dos veces en un mismo correo pegado).
+function combinarItemsDuplicados(items) {
+  const porCodigo = new Map();
+  for (const item of items) {
+    const clave = item.itemCode.toUpperCase();
+    const existente = porCodigo.get(clave);
+    if (existente) {
+      existente.qty += item.qty;
+      existente.duplicados += 1;
+    } else {
+      porCodigo.set(clave, { ...item, duplicados: 1 });
+    }
+  }
+  return [...porCodigo.values()];
+}
+
 // Divide el texto pegado en líneas y va agrupando cada encabezado "PRDF: ..."
 // con los renglones de artículo que le siguen, hasta el próximo encabezado.
 export function parseRequestText(texto) {
-  if (!texto || !texto.trim()) return [];
+  if (!texto || !texto.trim()) {
+    return { solicitudes: [], lineasNoReconocidas: [] };
+  }
 
   const lineas = texto.split(/\r?\n/);
-  const solicitudes = [];
+  const solicitudesCrudas = [];
+  const lineasNoReconocidas = [];
   let actual = null;
 
   for (const lineaOriginal of lineas) {
@@ -68,8 +99,16 @@ export function parseRequestText(texto) {
         cliente: cliente.trim(),
         rep: rep.trim(),
         items: [],
+        lineasNoReconocidas: [],
       };
-      solicitudes.push(actual);
+      solicitudesCrudas.push(actual);
+      continue;
+    }
+
+    if (PARECE_HEADER_REGEX.test(linea)) {
+      // Empieza como un encabezado PRDF pero no completó el patrón esperado.
+      lineasNoReconocidas.push(linea);
+      actual = null;
       continue;
     }
 
@@ -81,8 +120,19 @@ export function parseRequestText(texto) {
         qty: Number(qty.trim()) || 0,
         descripcion: descripcion.trim(),
       });
+    } else if (actual) {
+      // Línea dentro de un bloque de solicitud que no es un encabezado ni
+      // un renglón de artículo reconocible: se reporta en vez de ignorarla.
+      actual.lineasNoReconocidas.push(linea);
+    } else {
+      lineasNoReconocidas.push(linea);
     }
   }
 
-  return solicitudes;
+  const solicitudes = solicitudesCrudas.map((s) => ({
+    ...s,
+    items: combinarItemsDuplicados(s.items),
+  }));
+
+  return { solicitudes, lineasNoReconocidas };
 }

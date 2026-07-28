@@ -21,6 +21,13 @@ function encontrarClave(claves, candidatos) {
 // la cantidad disponible (y demanda/consumo si el archivo la trae).
 export async function parseInventoryFile(file) {
   const arrayBuffer = await file.arrayBuffer();
+  return parseInventoryArrayBuffer(arrayBuffer);
+}
+
+// Misma lógica que parseInventoryFile pero a partir de un ArrayBuffer ya
+// en memoria (se usa al rehidratar el archivo guardado en sessionStorage,
+// sin pedirle al usuario que lo vuelva a subir).
+export function parseInventoryArrayBuffer(arrayBuffer) {
   const workbook = XLSX.read(arrayBuffer, { type: 'array' });
   const primeraHoja = workbook.Sheets[workbook.SheetNames[0]];
   const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
