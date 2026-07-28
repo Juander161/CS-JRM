@@ -11,7 +11,7 @@ import { evaluarSolicitudes } from './utils/evaluateRules.js';
 import { exportarHistorialExcel } from './utils/exportHistorialExcel.js';
 import { usePermission } from '../../context/PermissionsContext.jsx';
 import { loadSessionJSON, saveSessionJSON, removeSessionItem } from '../../services/storage/sessionStore.js';
-import { arrayBufferToBase64, base64ToArrayBuffer } from '../../services/storage/binaryEncoding.js';
+import { guardarArchivo, cargarArchivo, eliminarArchivo } from '../../services/storage/indexedFileStore.js';
 
 const UMBRAL_DEFECTO = 30;
 const MARGEN_DIAS_DEFECTO = 3;
@@ -19,6 +19,14 @@ const MARGEN_AMBAR_DEFECTO = 7;
 
 const INVENTARIO_KEY = 'order-approval-inventario';
 const HISTORIAL_KEY = 'order-approval-historial';
+
+function esMismoDiaCalendario(a, b) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
 
 export default function OrderApprovalPage() {
   const puedeVer = usePermission('orderApproval', 'view');
@@ -38,16 +46,25 @@ export default function OrderApprovalPage() {
   // pestaña/sesión actual (si los hay), para no perderlos ante un refresh
   // mientras se procesan varios correos seguidos contra el mismo archivo.
   useEffect(() => {
-    const inventarioGuardado = loadSessionJSON(INVENTARIO_KEY, null);
-    if (inventarioGuardado) {
-      try {
-        const arrayBuffer = base64ToArrayBuffer(inventarioGuardado.base64);
-        setInventario(parseInventoryArrayBuffer(arrayBuffer));
-        setInventoryFileName(inventarioGuardado.nombre);
-      } catch (error) {
-        console.warn('No se pudo restaurar el Excel de disponibilidad de la sesión', error);
+    (async () => {
+      const inventarioGuardado = await cargarArchivo(INVENTARIO_KEY);
+      if (inventarioGuardado) {
+        // El material disponible se sube A DIARIO (ver documento de reglas):
+        // si el archivo guardado es de un día distinto, no se restaura solo
+        // para evitar comparar contra disponibilidad de ayer sin darse cuenta.
+        const esDeHoy = esMismoDiaCalendario(new Date(inventarioGuardado.guardadoEn), new Date());
+        if (esDeHoy) {
+          try {
+            setInventario(parseInventoryArrayBuffer(inventarioGuardado.arrayBuffer));
+            setInventoryFileName(inventarioGuardado.nombre);
+          } catch (error) {
+            console.warn('No se pudo restaurar el Excel de disponibilidad guardado', error);
+          }
+        } else {
+          eliminarArchivo(INVENTARIO_KEY);
+        }
       }
-    }
+    })();
     setHistorial(loadSessionJSON(HISTORIAL_KEY, []));
   }, []);
 
@@ -64,9 +81,10 @@ export default function OrderApprovalPage() {
       const mapa = parseInventoryArrayBuffer(arrayBuffer);
       setInventario(mapa);
       setInventoryFileName(file.name);
-      saveSessionJSON(INVENTARIO_KEY, {
+      await guardarArchivo(INVENTARIO_KEY, {
         nombre: file.name,
-        base64: arrayBufferToBase64(arrayBuffer),
+        arrayBuffer,
+        guardadoEn: new Date().toISOString(),
       });
     } catch (error) {
       setInventario(null);
