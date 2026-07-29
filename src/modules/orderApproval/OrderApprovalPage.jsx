@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Card from '../../components/Card.jsx';
+import Toolbar from '../../components/Toolbar.jsx';
 import RequestTextInput from './components/RequestTextInput.jsx';
 import InventoryUpload from './components/InventoryUpload.jsx';
 import ThresholdConfig from './components/ThresholdConfig.jsx';
-import ResultsTable from './components/ResultsTable.jsx';
+import ResultsTabs from './components/ResultsTabs.jsx';
 import BusquedaManual from './components/BusquedaManual.jsx';
 import { parseRequestText } from './utils/parseRequestText.js';
 import { parseInventoryArrayBuffer } from './utils/parseInventoryFile.js';
@@ -32,6 +33,7 @@ export default function OrderApprovalPage() {
   const puedeVer = usePermission('orderApproval', 'view');
   const puedeEjecutar = usePermission('orderApproval', 'run');
 
+  const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [textoSolicitud, setTextoSolicitud] = useState('');
   const [inventario, setInventario] = useState(null);
   const [inventoryFileName, setInventoryFileName] = useState('');
@@ -101,6 +103,7 @@ export default function OrderApprovalPage() {
       margenAmbarPorcentaje: margenAmbar / 100,
     });
     setResultado(evaluado);
+    setMostrarFormulario(false);
 
     const hora = new Date().toLocaleTimeString('es-MX');
     const nuevoHistorial = [...historial, ...evaluado.map((solicitud) => ({ hora, solicitud }))];
@@ -119,72 +122,77 @@ export default function OrderApprovalPage() {
 
   return (
     <>
-      <RequestTextInput valor={textoSolicitud} onChange={setTextoSolicitud} />
+      <Toolbar>
+        {puedeEjecutar && (
+          <button className="primary" onClick={() => setMostrarFormulario((v) => !v)}>
+            {mostrarFormulario ? 'Cancelar' : '+ Nueva comparación'}
+          </button>
+        )}
+        <div className="toolbar-separator" />
+        <span className="hint">
+          Excel de disponibilidad: {inventoryFileName ? <strong>{inventoryFileName}</strong> : 'ninguno cargado'}
+        </span>
+        <div className="toolbar-spacer" />
+        {historial.length > 0 && (
+          <>
+            <button className="secondary" onClick={() => exportarHistorialExcel(historial)}>
+              Descargar historial (Excel)
+            </button>
+            <button className="danger" onClick={handleVaciarHistorial}>Vaciar historial</button>
+          </>
+        )}
+      </Toolbar>
 
-      {lineasNoReconocidas.length > 0 && (
-        <div className="warning-box">
-          {lineasNoReconocidas.length} línea(s) parecen encabezado o texto de solicitud pero no se
-          reconocieron con el formato esperado (revisa mayúsculas/espacios, o avisa para ajustar el
-          lector):
-          <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-            {lineasNoReconocidas.map((linea, idx) => (
-              <li key={idx}><code>{linea}</code></li>
-            ))}
-          </ul>
-        </div>
+      {mostrarFormulario && (
+        <>
+          <RequestTextInput valor={textoSolicitud} onChange={setTextoSolicitud} />
+
+          {lineasNoReconocidas.length > 0 && (
+            <div className="warning-box">
+              {lineasNoReconocidas.length} línea(s) parecen encabezado o texto de solicitud pero no
+              se reconocieron con el formato esperado (revisa mayúsculas/espacios, o avisa para
+              ajustar el lector):
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                {lineasNoReconocidas.map((linea, idx) => (
+                  <li key={idx}><code>{linea}</code></li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <InventoryUpload
+            fileName={inventoryFileName}
+            onFileSelected={handleInventoryFile}
+            error={inventoryError}
+          />
+
+          <BusquedaManual inventario={inventario} />
+
+          <ThresholdConfig
+            umbral={umbral}
+            onUmbralChange={setUmbral}
+            margenDias={margenDias}
+            onMargenDiasChange={setMargenDias}
+            margenAmbar={margenAmbar}
+            onMargenAmbarChange={setMargenAmbar}
+          />
+
+          <Card title="Comparar">
+            <p className="hint">
+              {solicitudesParseadas.length} solicitud(es) detectada(s), {totalItems} artículo(s) en total.
+            </p>
+            <button
+              className="primary"
+              disabled={!inventario || !solicitudesParseadas.length}
+              onClick={handleComparar}
+            >
+              Comparar contra disponibilidad
+            </button>
+          </Card>
+        </>
       )}
 
-      <InventoryUpload
-        fileName={inventoryFileName}
-        onFileSelected={handleInventoryFile}
-        error={inventoryError}
-      />
-
-      <BusquedaManual inventario={inventario} />
-
-      <ThresholdConfig
-        umbral={umbral}
-        onUmbralChange={setUmbral}
-        margenDias={margenDias}
-        onMargenDiasChange={setMargenDias}
-        margenAmbar={margenAmbar}
-        onMargenAmbarChange={setMargenAmbar}
-      />
-
-      <Card title="4. Comparar">
-        <p className="hint">
-          {solicitudesParseadas.length} solicitud(es) detectada(s), {totalItems} artículo(s) en total.
-        </p>
-        <button
-          className="primary"
-          disabled={!puedeEjecutar || !inventario || !solicitudesParseadas.length}
-          onClick={handleComparar}
-        >
-          Comparar contra disponibilidad
-        </button>
-        {!puedeEjecutar && <p className="hint">No tienes permiso para ejecutar la comparación.</p>}
-      </Card>
-
-      <ResultsTable solicitudes={resultado} />
-
-      {historial.length > 0 && (
-        <Card
-          title="Historial del día"
-          actions={
-            <>
-              <button className="primary" onClick={() => exportarHistorialExcel(historial)}>
-                Descargar historial (Excel)
-              </button>
-              <button className="danger" onClick={handleVaciarHistorial}>Vaciar historial</button>
-            </>
-          }
-        >
-          <p className="hint">
-            {historial.length} solicitud(es) evaluada(s) en esta sesión de trabajo (se guarda
-            mientras la pestaña siga abierta, como respaldo de qué se aprobó/rechazó y por qué).
-          </p>
-        </Card>
-      )}
+      <ResultsTabs solicitudes={resultado} />
     </>
   );
 }

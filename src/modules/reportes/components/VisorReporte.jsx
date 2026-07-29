@@ -4,7 +4,7 @@ import Card from '../../../components/Card.jsx';
 const TAMANO_PAGINA = 100;
 const MAX_VALORES_FILTRO = 20;
 
-export default function VisorReporte({ reporte, columnas, filas, onCerrar }) {
+export default function VisorReporte({ reporte, columnas, filas, puedeExportar, onDescargar }) {
   const [busqueda, setBusqueda] = useState('');
   const [columnaFiltro, setColumnaFiltro] = useState('');
   const [valorFiltro, setValorFiltro] = useState('');
@@ -36,10 +36,14 @@ export default function VisorReporte({ reporte, columnas, filas, onCerrar }) {
 
   return (
     <Card
-      title={`Viendo: ${reporte.nombreArchivo} (${reporte.tipo})`}
-      actions={<button className="secondary" onClick={onCerrar}>Cerrar</button>}
+      title={`${reporte.nombreArchivo} — ${reporte.tipo}`}
+      actions={
+        puedeExportar && (
+          <button className="secondary" onClick={onDescargar}>Descargar</button>
+        )
+      }
     >
-      <p className="hint">{reporte.descripcion}</p>
+      {reporte.descripcion && <p className="hint">{reporte.descripcion}</p>}
       <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
         <input
           type="text"

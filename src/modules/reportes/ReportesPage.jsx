@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Card from '../../components/Card.jsx';
+import Toolbar from '../../components/Toolbar.jsx';
+import TabBar from '../../components/TabBar.jsx';
 import SubirReporte from './components/SubirReporte.jsx';
-import HistorialReportes from './components/HistorialReportes.jsx';
 import VisorReporte from './components/VisorReporte.jsx';
-import { listarReportes } from './utils/reportesStore.js';
+import { listarReportes, obtenerArchivoReporte, eliminarReporte } from './utils/reportesStore.js';
 import { parseGenericSheet } from './utils/parseGenericSheet.js';
+import { descargarArchivo } from './utils/descargarArchivo.js';
 import { usePermission, usePermissionsContext } from '../../context/PermissionsContext.jsx';
 
 export default function ReportesPage() {
@@ -15,22 +17,56 @@ export default function ReportesPage() {
   const { currentUser } = usePermissionsContext();
 
   const [reportes, setReportes] = useState(listarReportes);
-  const [reporteAbierto, setReporteAbierto] = useState(null);
+  const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [activeId, setActiveId] = useState(null);
+  const [contenidoActivo, setContenidoActivo] = useState(null);
+  const [busquedaTabs, setBusquedaTabs] = useState('');
 
-  function refrescarHistorial() {
-    setReportes(listarReportes());
-  }
+  const tabsFiltrados = useMemo(() => {
+    if (!busquedaTabs.trim()) return reportes;
+    const texto = busquedaTabs.toLowerCase();
+    return reportes.filter(
+      (r) => r.nombreArchivo.toLowerCase().includes(texto) || r.tipo.toLowerCase().includes(texto)
+    );
+  }, [reportes, busquedaTabs]);
 
-  function handleVerReporte(reporte, arrayBuffer) {
-    const { columnas, filas } = parseGenericSheet(arrayBuffer);
-    setReporteAbierto({ reporte, columnas, filas });
-  }
-
-  function handleReporteEliminado() {
-    if (reporteAbierto && !listarReportes().some((r) => r.id === reporteAbierto.reporte.id)) {
-      setReporteAbierto(null);
+  async function abrirReporte(reporte) {
+    setActiveId(reporte.id);
+    const arrayBuffer = await obtenerArchivoReporte(reporte.id);
+    if (!arrayBuffer) {
+      setContenidoActivo(null);
+      return;
     }
-    refrescarHistorial();
+    const { columnas, filas } = parseGenericSheet(arrayBuffer);
+    setContenidoActivo({ reporte, columnas, filas, arrayBuffer });
+  }
+
+  function handleSelectTab(id) {
+    const reporte = reportes.find((r) => r.id === id);
+    if (reporte) abrirReporte(reporte);
+  }
+
+  async function handleReporteSubido() {
+    const actualizados = listarReportes();
+    setReportes(actualizados);
+    setMostrarFormulario(false);
+    if (actualizados.length) abrirReporte(actualizados[0]);
+  }
+
+  async function handleCerrarTab(id) {
+    if (!puedeEliminar) return;
+    await eliminarReporte(id);
+    const actualizados = listarReportes();
+    setReportes(actualizados);
+    if (activeId === id) {
+      setActiveId(null);
+      setContenidoActivo(null);
+      if (actualizados.length) abrirReporte(actualizados[0]);
+    }
+  }
+
+  function handleDescargarActivo() {
+    if (contenidoActivo) descargarArchivo(contenidoActivo.reporte.nombreArchivo, contenidoActivo.arrayBuffer);
   }
 
   if (!puedeVer) {
@@ -39,42 +75,61 @@ export default function ReportesPage() {
 
   return (
     <>
-      <div className="warning-box">
-        La sincronización automática con Oracle todavía no está autorizada. Por ahora, todos
-        los reportes (de Oracle o generados a mano) se cargan aquí manualmente en vez de
-        enviarse por correo; la estructura ya queda lista para activar la sincronización
-        automática apenas se autorice.
-      </div>
+      <Toolbar>
+        <button className="secondary" disabled title="Pendiente de autorización">
+          Sincronizar con Oracle (próximamente)
+        </button>
+        <div className="toolbar-separator" />
+        {puedeSubir && (
+          <button className="primary" onClick={() => setMostrarFormulario((v) => !v)}>
+            {mostrarFormulario ? 'Cancelar carga' : '+ Cargar reporte'}
+          </button>
+        )}
+        <div className="toolbar-spacer" />
+        <span className="hint">{reportes.length} reporte(s) en el historial</span>
+      </Toolbar>
 
-      <Card
-        title="Sincronización con Oracle"
-        actions={<button className="secondary" disabled title="Pendiente de autorización">Sincronizar con Oracle (próximamente)</button>}
-      >
-        <p className="hint">
-          Cuando se autorice el acceso, los reportes de Oracle se sincronizarán solos en
-          horarios programados (con reintentos automáticos y aviso al administrador si Oracle
-          no responde), sin necesidad de subirlos a mano.
-        </p>
-      </Card>
-
-      {puedeSubir && (
-        <SubirReporte subidoPor={currentUser?.nombre || 'Desconocido'} onReporteSubido={refrescarHistorial} />
+      {mostrarFormulario && (
+        <SubirReporte
+          subidoPor={currentUser?.nombre || 'Desconocido'}
+          onReporteSubido={handleReporteSubido}
+        />
       )}
 
-      <VisorReporte
-        reporte={reporteAbierto?.reporte}
-        columnas={reporteAbierto?.columnas || []}
-        filas={reporteAbierto?.filas || []}
-        onCerrar={() => setReporteAbierto(null)}
+      <TabBar
+        tabs={tabsFiltrados.map((r) => ({
+          id: r.id,
+          label: r.nombreArchivo,
+          sublabel: r.tipo,
+          closable: puedeEliminar,
+        }))}
+        activeId={activeId}
+        onSelect={handleSelectTab}
+        onClose={handleCerrarTab}
+        emptyMessage="Todavía no se ha cargado ningún reporte. Usa '+ Cargar reporte' arriba."
+        extra={
+          reportes.length > 3 && (
+            <input
+              type="text"
+              placeholder="Filtrar pestañas..."
+              value={busquedaTabs}
+              onChange={(e) => setBusquedaTabs(e.target.value)}
+              style={{ width: 180 }}
+            />
+          )
+        }
       />
 
-      <HistorialReportes
-        reportes={reportes}
-        onVerReporte={handleVerReporte}
-        onReporteEliminado={handleReporteEliminado}
-        puedeExportar={puedeExportar}
-        puedeEliminar={puedeEliminar}
-      />
+      {contenidoActivo && (
+        <VisorReporte
+          key={contenidoActivo.reporte.id}
+          reporte={contenidoActivo.reporte}
+          columnas={contenidoActivo.columnas}
+          filas={contenidoActivo.filas}
+          puedeExportar={puedeExportar}
+          onDescargar={handleDescargarActivo}
+        />
+      )}
     </>
   );
 }

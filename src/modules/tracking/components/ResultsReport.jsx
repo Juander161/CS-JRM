@@ -66,7 +66,7 @@ export default function ResultsReport({ resultados, scanLocation, puedeExportar 
 
   return (
     <Card
-      title="4. Estado general de los envíos"
+      title="Estado general de los envíos"
       actions={
         puedeExportar ? (
           <>
