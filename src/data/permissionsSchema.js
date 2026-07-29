@@ -21,6 +21,16 @@ export const SECTIONS = [
       { key: 'export', label: 'Descargar reporte Excel' },
     ],
   },
+  {
+    key: 'reportes',
+    label: 'Reportes',
+    actions: [
+      { key: 'view', label: 'Ver la sección' },
+      { key: 'upload', label: 'Cargar reportes manualmente' },
+      { key: 'export', label: 'Descargar reportes del historial' },
+      { key: 'eliminar', label: 'Eliminar reportes del historial' },
+    ],
+  },
 ];
 
 export const ROLES = ['admin', 'user'];
