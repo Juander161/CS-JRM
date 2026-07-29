@@ -12,8 +12,9 @@ import {
   extraerScanLocations,
   extraerCarriersPorLocation,
 } from './utils/parseFile.js';
-import { scrapeBatch } from './scrapers/mockScraper.js';
+import { getScraper } from './scrapers/index.js';
 import { getCarriersWhitelist, addCarrier, removeCarrier } from './config/carriersConfig.js';
+import { getScraperMode, setScraperMode, MODOS_SCRAPER } from './config/scraperModeConfig.js';
 import { crearArchivoNuevo, actualizarArchivoExistente } from './utils/exportExcelStyled.js';
 import { usePermission } from '../../context/PermissionsContext.jsx';
 
@@ -21,8 +22,10 @@ export default function TrackingPage() {
   const puedeVer = usePermission('tracking', 'view');
   const puedeBuscar = usePermission('tracking', 'search');
   const puedeExportar = usePermission('tracking', 'export');
+  const puedeConfigurarFuente = usePermission('tracking', 'configureSource');
 
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [scraperMode, setScraperModeState] = useState(getScraperMode);
   const [carriersWhitelist, setCarriersWhitelist] = useState(getCarriersWhitelist);
   const [fileName, setFileName] = useState('');
   const [registros, setRegistros] = useState([]);
@@ -68,6 +71,7 @@ export default function TrackingPage() {
     setCargando(true);
     setProgreso({ hecho: 0, total: items.length });
 
+    const { scrapeBatch } = getScraper(scraperMode);
     const resultados = await scrapeBatch(items, (hecho, total) => setProgreso({ hecho, total }));
 
     const id = `${scanLocationSeleccionado}-${Date.now()}`;
@@ -100,6 +104,10 @@ export default function TrackingPage() {
     e.target.value = '';
   }
 
+  function handleCambiarModo(valor) {
+    setScraperModeState(setScraperMode(valor));
+  }
+
   if (!puedeVer) {
     return <Card title="Revisión de Trackings (UPS)">No tienes permiso para ver esta sección.</Card>;
   }
@@ -119,7 +127,20 @@ export default function TrackingPage() {
           Archivo de trackings: {fileName ? <strong>{fileName}</strong> : 'ninguno cargado'}
         </span>
         <div className="toolbar-spacer" />
-        <span className="hint">Modo de prueba: resultados simulados</span>
+        {puedeConfigurarFuente ? (
+          <label className="hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            Fuente de datos:
+            <select value={scraperMode} onChange={(e) => handleCambiarModo(e.target.value)}>
+              {MODOS_SCRAPER.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span className="hint">
+            Fuente de datos: {MODOS_SCRAPER.find((m) => m.value === scraperMode)?.label}
+          </span>
+        )}
         {puedeExportar && busquedas.length > 0 && (
           <>
             <div className="toolbar-separator" />
@@ -142,11 +163,21 @@ export default function TrackingPage() {
 
       {mostrarFormulario && (
         <>
-          <div className="warning-box">
-            Modo de prueba: los resultados se simulan localmente. La consulta real contra
-            UPS/FedEx/USPS se activará cuando se defina y autorice el mecanismo (API oficial
-            del carrier o el enfoque de scraping vía función serverless ya documentado).
-          </div>
+          {scraperMode === 'scraping' ? (
+            <div className="warning-box">
+              Fuente de datos: <strong>Scraping real (ups.com)</strong>. Cada búsqueda hace
+              consultas reales al sitio de UPS (vía la función serverless <code>/api/scrape</code>)
+              mientras la API oficial no esté autorizada; puede ser más lento y fallar si UPS
+              cambia su página o limita las consultas. Cuando la API oficial se autorice, se
+              podrá cambiar de fuente aquí mismo sin tocar el resto del flujo.
+            </div>
+          ) : (
+            <div className="warning-box">
+              Fuente de datos: <strong>Simulado</strong>. Los resultados se generan localmente,
+              sin salir a internet. Cambia a "Scraping real" arriba para consultar ups.com de
+              verdad (mientras se autoriza la API oficial del carrier).
+            </div>
+          )}
 
           <CarrierWhitelistEditor
             carriers={carriersWhitelist}

@@ -19,6 +19,7 @@ export const SECTIONS = [
       { key: 'view', label: 'Ver la sección' },
       { key: 'search', label: 'Ejecutar búsqueda / consulta de trackings' },
       { key: 'export', label: 'Descargar reporte Excel' },
+      { key: 'configureSource', label: 'Cambiar la fuente de datos (simulado / scraping real)' },
     ],
   },
   {
