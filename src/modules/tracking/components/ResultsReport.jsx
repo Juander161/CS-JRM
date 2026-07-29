@@ -1,7 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Card from '../../../components/Card.jsx';
 import Badge from '../../../components/Badge.jsx';
-import { crearArchivoNuevo, actualizarArchivoExistente } from '../utils/exportExcelStyled.js';
 
 const TAMANO_PAGINA = 100;
 
@@ -26,11 +25,10 @@ function construirResumenPorCarrier(resultados) {
     .sort((a, b) => b.total - a.total);
 }
 
-export default function ResultsReport({ resultados, scanLocation, puedeExportar }) {
+export default function ResultsReport({ resultados, scanLocation }) {
   const [pagina, setPagina] = useState(0);
   const [busquedaWaybill, setBusquedaWaybill] = useState('');
   const [filtroCarrier, setFiltroCarrier] = useState('');
-  const inputArchivoRef = useRef(null);
 
   const resumenPorCarrier = useMemo(() => construirResumenPorCarrier(resultados), [resultados]);
   const carriersDisponibles = useMemo(
@@ -56,37 +54,10 @@ export default function ResultsReport({ resultados, scanLocation, puedeExportar 
     return (valor) => { setter(valor); setPagina(0); };
   }
 
-  async function handleActualizarArchivo(e) {
-    const file = e.target.files?.[0];
-    if (file) await actualizarArchivoExistente(file, scanLocation, resultados);
-    e.target.value = '';
-  }
-
   if (!resultados.length) return null;
 
   return (
-    <Card
-      title="Estado general de los envíos"
-      actions={
-        puedeExportar ? (
-          <>
-            <button className="primary" onClick={() => crearArchivoNuevo(scanLocation, resultados)}>
-              Crear archivo nuevo
-            </button>
-            <button className="secondary" onClick={() => inputArchivoRef.current?.click()}>
-              Actualizar archivo existente
-            </button>
-            <input
-              ref={inputArchivoRef}
-              type="file"
-              accept=".xlsx"
-              style={{ display: 'none' }}
-              onChange={handleActualizarArchivo}
-            />
-          </>
-        ) : null
-      }
-    >
+    <Card title={`Estado general de los envíos — ${scanLocation}`}>
       <p className="hint">{resultados.length} trackings procesados en total</p>
 
       <h3>Resumen por Carrier</h3>

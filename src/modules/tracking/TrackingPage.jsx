@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import Card from '../../components/Card.jsx';
 import Toolbar from '../../components/Toolbar.jsx';
 import TabBar from '../../components/TabBar.jsx';
@@ -14,6 +14,7 @@ import {
 } from './utils/parseFile.js';
 import { scrapeBatch } from './scrapers/mockScraper.js';
 import { getCarriersWhitelist, addCarrier, removeCarrier } from './config/carriersConfig.js';
+import { crearArchivoNuevo, actualizarArchivoExistente } from './utils/exportExcelStyled.js';
 import { usePermission } from '../../context/PermissionsContext.jsx';
 
 export default function TrackingPage() {
@@ -33,6 +34,7 @@ export default function TrackingPage() {
   const [progreso, setProgreso] = useState(null);
   const [busquedas, setBusquedas] = useState([]);
   const [activeId, setActiveId] = useState(null);
+  const inputArchivoRef = useRef(null);
 
   async function handleFileSelected(file) {
     setFileName(file.name);
@@ -92,6 +94,12 @@ export default function TrackingPage() {
     });
   }
 
+  async function handleActualizarArchivo(e) {
+    const file = e.target.files?.[0];
+    if (file) await actualizarArchivoExistente(file, busquedas);
+    e.target.value = '';
+  }
+
   if (!puedeVer) {
     return <Card title="Revisión de Trackings (UPS)">No tienes permiso para ver esta sección.</Card>;
   }
@@ -112,6 +120,24 @@ export default function TrackingPage() {
         </span>
         <div className="toolbar-spacer" />
         <span className="hint">Modo de prueba: resultados simulados</span>
+        {puedeExportar && busquedas.length > 0 && (
+          <>
+            <div className="toolbar-separator" />
+            <button className="primary" onClick={() => crearArchivoNuevo(busquedas)}>
+              Descargar reporte del día (Excel)
+            </button>
+            <button className="secondary" onClick={() => inputArchivoRef.current?.click()}>
+              Actualizar archivo existente
+            </button>
+            <input
+              ref={inputArchivoRef}
+              type="file"
+              accept=".xlsx"
+              style={{ display: 'none' }}
+              onChange={handleActualizarArchivo}
+            />
+          </>
+        )}
       </Toolbar>
 
       {mostrarFormulario && (
@@ -168,7 +194,6 @@ export default function TrackingPage() {
           key={busquedaActiva.id}
           resultados={busquedaActiva.resultados}
           scanLocation={busquedaActiva.scanLocation}
-          puedeExportar={puedeExportar}
         />
       )}
     </>
