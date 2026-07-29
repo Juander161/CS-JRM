@@ -29,6 +29,7 @@ export default function OrderApprovalPage() {
   const puedeEjecutar = usePermission('orderApproval', 'run');
 
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [mostrarReglas, setMostrarReglas] = useState(false);
   const [textoSolicitud, setTextoSolicitud] = useState('');
 
   // Historial de archivos de inventario guardados (metadata ligera)
@@ -154,14 +155,27 @@ export default function OrderApprovalPage() {
           error={inventarioError}
         />
         <div className="toolbar-separator" />
-        <ThresholdConfig
-          umbral={umbral}
-          onUmbralChange={setUmbral}
-          margenDias={margenDias}
-          onMargenDiasChange={setMargenDias}
-          margenAmbar={margenAmbar}
-          onMargenAmbarChange={setMargenAmbar}
-        />
+        <button
+          className="secondary"
+          onClick={() => setMostrarReglas((v) => !v)}
+          title="Configurar umbral de aprobación, zona ámbar y días RDD"
+          style={{ fontSize: '0.8rem' }}
+        >
+          ⚙ Reglas
+        </button>
+        {mostrarReglas && (
+          <>
+            <div className="toolbar-separator" />
+            <ThresholdConfig
+              umbral={umbral}
+              onUmbralChange={setUmbral}
+              margenDias={margenDias}
+              onMargenDiasChange={setMargenDias}
+              margenAmbar={margenAmbar}
+              onMargenAmbarChange={setMargenAmbar}
+            />
+          </>
+        )}
         <div className="toolbar-spacer" />
         {historial.length > 0 && (
           <>
