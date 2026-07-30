@@ -27,11 +27,9 @@ export default function OrderApprovalPage() {
   const puedeVer = usePermission('orderApproval', 'view');
   const puedeEjecutar = usePermission('orderApproval', 'run');
 
-  const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [mostrarReglas, setMostrarReglas] = useState(false);
   const [textoSolicitud, setTextoSolicitud] = useState('');
 
-  // Reportes de tipo inventario disponibles en el módulo de Reportes
   const [archivosInventario, setArchivosInventario] = useState([]);
   const [seleccionados, setSeleccionados] = useState([]);
   const [inventarioError, setInventarioError] = useState('');
@@ -48,16 +46,6 @@ export default function OrderApprovalPage() {
     if (archivos.length > 0) setSeleccionados([archivos[0].id]);
     setHistorial(loadSessionJSON(HISTORIAL_KEY, []));
   }, []);
-
-  // Refresca la lista cada vez que el panel de nueva comparación se abre
-  // (el usuario pudo haber ido a Reportes a cargar un archivo entre tanto)
-  useEffect(() => {
-    if (mostrarFormulario) {
-      const archivos = listarReportesInventario();
-      setArchivosInventario(archivos);
-      if (!seleccionados.length && archivos.length) setSeleccionados([archivos[0].id]);
-    }
-  }, [mostrarFormulario]);
 
   const { solicitudes: solicitudesParseadas, lineasNoReconocidas } = useMemo(
     () => parseRequestText(textoSolicitud),
@@ -84,7 +72,6 @@ export default function OrderApprovalPage() {
         margenAmbarPorcentaje: margenAmbar / 100,
       });
       setResultado(evaluado);
-      setMostrarFormulario(false);
 
       const hora = new Date().toLocaleTimeString('es-MX');
       const nuevoHistorial = [
@@ -103,7 +90,7 @@ export default function OrderApprovalPage() {
     removeSessionItem(HISTORIAL_KEY);
   }
 
-  // Inventario combinado en vivo para BusquedaManual
+  // Inventario combinado en vivo para BusquedaManual en la toolbar
   const [inventarioVivo, setInventarioVivo] = useState(null);
   useEffect(() => {
     if (!seleccionados.length) { setInventarioVivo(null); return; }
@@ -132,8 +119,12 @@ export default function OrderApprovalPage() {
     <>
       <Toolbar>
         {puedeEjecutar && (
-          <button className="primary" onClick={() => setMostrarFormulario((v) => !v)}>
-            {mostrarFormulario ? 'Cancelar' : '+ Nueva comparación'}
+          <button
+            className="secondary"
+            onClick={() => { setTextoSolicitud(''); setInventarioError(''); }}
+            title="Limpiar el cuadro de texto para iniciar una nueva comparación"
+          >
+            Limpiar
           </button>
         )}
         <div className="toolbar-separator" />
@@ -165,8 +156,10 @@ export default function OrderApprovalPage() {
           </>
         )}
         <div className="toolbar-spacer" />
+        <BusquedaManual inventario={inventarioVivo} />
         {historial.length > 0 && (
           <>
+            <div className="toolbar-separator" />
             <button className="secondary" onClick={() => exportarHistorialExcel(historial)}>
               Descargar historial (Excel)
             </button>
@@ -175,14 +168,14 @@ export default function OrderApprovalPage() {
         )}
       </Toolbar>
 
-      {mostrarFormulario && (
+      {/* El formulario siempre está visible — no requiere abrir con un botón */}
+      {puedeEjecutar && (
         <>
           <RequestTextInput valor={textoSolicitud} onChange={setTextoSolicitud} />
 
           {lineasNoReconocidas.length > 0 && (
             <div className="warning-box">
-              {lineasNoReconocidas.length} línea(s) parecen encabezado o texto de solicitud pero no
-              se reconocieron con el formato esperado:
+              {lineasNoReconocidas.length} línea(s) no reconocidas con el formato esperado:
               <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
                 {lineasNoReconocidas.map((linea, idx) => (
                   <li key={idx}><code>{linea}</code></li>
@@ -197,16 +190,16 @@ export default function OrderApprovalPage() {
             </div>
           )}
 
-          <BusquedaManual inventario={inventarioVivo} />
-
           <Card title="Comparar">
             <p className="hint">
-              {solicitudesParseadas.length} solicitud(es) detectada(s), {totalItems} artículo(s).
-              {seleccionados.length > 1 && (
-                <> Combinando <strong>{seleccionados.length} reportes</strong> de disponibilidad.</>
-              )}
+              {solicitudesParseadas.length > 0
+                ? <>
+                    {solicitudesParseadas.length} solicitud(es) · {totalItems} artículo(s).
+                    {seleccionados.length > 1 && <> Combinando <strong>{seleccionados.length} reportes</strong>.</>}
+                  </>
+                : 'Pega el texto de la solicitud arriba para continuar.'}
               {seleccionados.length === 0 && (
-                <> <strong style={{ color: '#b91c1c' }}>Selecciona al menos un reporte de inventario en la barra.</strong></>
+                <> <strong style={{ color: '#b91c1c' }}>Selecciona un reporte de inventario en la barra.</strong></>
               )}
             </p>
             <button
