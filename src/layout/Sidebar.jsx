@@ -27,21 +27,26 @@ const ICONOS_POR_SECCION = {
   reportes: IconReportes,
 };
 
-function NavItem({ to, label, Icon, colapsada }) {
+function NavItem({ to, label, Icon, mostrarLabel, onNavClick }) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-      title={colapsada ? label : undefined}
+      title={!mostrarLabel ? label : undefined}
+      onClick={onNavClick}
     >
       <span className="nav-icon" aria-hidden="true"><Icon /></span>
-      {!colapsada && <span className="nav-label">{label}</span>}
+      {mostrarLabel && <span className="nav-label">{label}</span>}
     </NavLink>
   );
 }
 
-export default function Sidebar() {
-  const [colapsada, setColapsada] = useState(() => loadJSON(COLAPSADO_KEY, false));
+export default function Sidebar({ movilAbierta = false, onCerrarMovil }) {
+  const [colapsada, setColapsada] = useState(() => {
+    const saved = loadJSON(COLAPSADO_KEY, null);
+    // Si no hay preferencia guardada, colapsar automáticamente en tablet/móvil
+    return saved !== null ? saved : window.innerWidth <= 1024;
+  });
 
   function alternarColapso() {
     setColapsada((prev) => {
@@ -51,32 +56,39 @@ export default function Sidebar() {
     });
   }
 
+  // En móvil con cajón abierto, siempre mostramos las etiquetas
+  const mostrarLabels = movilAbierta || !colapsada;
+
   return (
-    <aside className={`sidebar${colapsada ? ' colapsada' : ''}`}>
+    <aside className={[
+      'sidebar',
+      colapsada ? 'colapsada' : '',
+      movilAbierta ? 'sidebar-movil-abierta' : '',
+    ].filter(Boolean).join(' ')}>
       <div className="sidebar-header">
-        {!colapsada && <div className="sidebar-title">Suite de Oficina</div>}
+        {mostrarLabels && <div className="sidebar-title">Suite de Oficina</div>}
         <button
           type="button"
           className="sidebar-toggle"
-          onClick={alternarColapso}
-          title={colapsada ? 'Expandir menú' : 'Colapsar menú'}
+          onClick={movilAbierta ? onCerrarMovil : alternarColapso}
+          title={colapsada && !movilAbierta ? 'Expandir menú' : 'Colapsar menú'}
         >
-          {colapsada ? <IconColapsarDerecha /> : <IconColapsarIzquierda />}
+          {colapsada && !movilAbierta ? <IconColapsarDerecha /> : <IconColapsarIzquierda />}
         </button>
       </div>
       <nav>
-        <NavItem to="/" label="Inicio" Icon={IconInicio} colapsada={colapsada} />
+        <NavItem to="/" label="Inicio" Icon={IconInicio} mostrarLabel={mostrarLabels} onNavClick={onCerrarMovil} />
         {SECTIONS.map((section) => (
-          <SectionNavItem key={section.key} section={section} colapsada={colapsada} />
+          <SectionNavItem key={section.key} section={section} mostrarLabel={mostrarLabels} onNavClick={onCerrarMovil} />
         ))}
         <div className="nav-separator" />
-        <NavItem to="/admin" label="Administración" Icon={IconAdmin} colapsada={colapsada} />
+        <NavItem to="/admin" label="Administración" Icon={IconAdmin} mostrarLabel={mostrarLabels} onNavClick={onCerrarMovil} />
       </nav>
     </aside>
   );
 }
 
-function SectionNavItem({ section, colapsada }) {
+function SectionNavItem({ section, mostrarLabel, onNavClick }) {
   const puedeVer = usePermission(section.key, 'view');
   if (!puedeVer) return null;
   return (
@@ -84,7 +96,8 @@ function SectionNavItem({ section, colapsada }) {
       to={ROUTES_BY_SECTION[section.key]}
       label={section.label}
       Icon={ICONOS_POR_SECCION[section.key] || IconReportes}
-      colapsada={colapsada}
+      mostrarLabel={mostrarLabel}
+      onNavClick={onNavClick}
     />
   );
 }

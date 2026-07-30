@@ -61,24 +61,26 @@ export default function ResultsReport({ resultados, scanLocation }) {
       <p className="hint">{resultados.length} trackings procesados en total</p>
 
       <h3>Resumen por Carrier</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Carrier</th><th>Total</th><th>Procesados</th>
-            <th>% Procesado</th><th>No Procesados</th><th>% No Procesado</th>
-          </tr>
-        </thead>
-        <tbody>
-          {resumenPorCarrier.map((r) => (
-            <tr key={r.carrier}>
-              <td>{r.carrier}</td><td>{r.total}</td><td>{r.procesados}</td>
-              <td><Badge tone="success">{r.porcentajeProcesado}%</Badge></td>
-              <td>{r.noProcesados}</td>
-              <td><Badge tone="danger">{r.porcentajeNoProcesado}%</Badge></td>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ minWidth: 480 }}>
+          <thead>
+            <tr>
+              <th>Carrier</th><th>Total</th><th>Procesados</th>
+              <th>% Procesado</th><th>No Procesados</th><th>% No Procesado</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {resumenPorCarrier.map((r) => (
+              <tr key={r.carrier}>
+                <td>{r.carrier}</td><td>{r.total}</td><td>{r.procesados}</td>
+                <td><Badge tone="success">{r.porcentajeProcesado}%</Badge></td>
+                <td>{r.noProcesados}</td>
+                <td><Badge tone="danger">{r.porcentajeNoProcesado}%</Badge></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <h3>Detalle de trackings</h3>
       <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -106,19 +108,21 @@ export default function ResultsReport({ resultados, scanLocation }) {
         </button>
       </div>
 
-      <table>
-        <thead>
-          <tr><th>Waybill</th><th>Carrier</th><th>Estado</th><th>Fecha de entrega</th><th>Procesado</th></tr>
-        </thead>
-        <tbody>
-          {filasVisibles.map((r) => (
-            <tr key={r.waybill}>
-              <td>{r.waybill}</td><td>{r.carrier}</td><td>{r.status}</td><td>{r.deliveryDate || '—'}</td>
-              <td><Badge tone={r.deliveryDate ? 'success' : 'danger'}>{r.deliveryDate ? 'Sí' : 'No'}</Badge></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ minWidth: 480 }}>
+          <thead>
+            <tr><th>Waybill</th><th>Carrier</th><th>Estado</th><th>Fecha de entrega</th><th>Procesado</th></tr>
+          </thead>
+          <tbody>
+            {filasVisibles.map((r) => (
+              <tr key={r.waybill}>
+                <td>{r.waybill}</td><td>{r.carrier}</td><td>{r.status}</td><td>{r.deliveryDate || '—'}</td>
+                <td><Badge tone={r.deliveryDate ? 'success' : 'danger'}>{r.deliveryDate ? 'Sí' : 'No'}</Badge></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Card>
   );
 }
