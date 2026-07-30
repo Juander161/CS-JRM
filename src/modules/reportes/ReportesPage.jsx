@@ -4,6 +4,7 @@ import Toolbar from '../../components/Toolbar.jsx';
 import TabBar from '../../components/TabBar.jsx';
 import SubirReporte from './components/SubirReporte.jsx';
 import VisorReporte from './components/VisorReporte.jsx';
+import ComparadorReportes from './components/ComparadorReportes.jsx';
 import { listarReportes, obtenerArchivoReporte, eliminarReporte } from './utils/reportesStore.js';
 import { parseGenericSheet } from './utils/parseGenericSheet.js';
 import { descargarArchivo } from './utils/descargarArchivo.js';
@@ -18,6 +19,7 @@ export default function ReportesPage() {
 
   const [reportes, setReportes] = useState(listarReportes);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [mostrarComparador, setMostrarComparador] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [contenidoActivo, setContenidoActivo] = useState(null);
   const [busquedaTabs, setBusquedaTabs] = useState('');
@@ -32,11 +34,9 @@ export default function ReportesPage() {
 
   async function abrirReporte(reporte) {
     setActiveId(reporte.id);
+    setMostrarComparador(false);
     const arrayBuffer = await obtenerArchivoReporte(reporte.id);
-    if (!arrayBuffer) {
-      setContenidoActivo(null);
-      return;
-    }
+    if (!arrayBuffer) { setContenidoActivo(null); return; }
     const { columnas, filas } = parseGenericSheet(arrayBuffer);
     setContenidoActivo({ reporte, columnas, filas, arrayBuffer });
   }
@@ -69,6 +69,11 @@ export default function ReportesPage() {
     if (contenidoActivo) descargarArchivo(contenidoActivo.reporte.nombreArchivo, contenidoActivo.arrayBuffer);
   }
 
+  function handleToggleComparador() {
+    setMostrarComparador((v) => !v);
+    if (!mostrarComparador) setMostrarFormulario(false);
+  }
+
   if (!puedeVer) {
     return <Card title="Reportes">No tienes permiso para ver esta sección.</Card>;
   }
@@ -81,12 +86,23 @@ export default function ReportesPage() {
         </button>
         <div className="toolbar-separator" />
         {puedeSubir && (
-          <button className="primary" onClick={() => setMostrarFormulario((v) => !v)}>
-            {mostrarFormulario ? 'Cancelar carga' : '+ Cargar reporte'}
+          <button
+            className={mostrarFormulario ? 'danger' : 'primary'}
+            onClick={() => { setMostrarFormulario((v) => !v); setMostrarComparador(false); }}
+          >
+            {mostrarFormulario ? 'Cancelar' : '+ Cargar reporte'}
           </button>
         )}
+        <button
+          className={mostrarComparador ? 'primary' : 'secondary'}
+          onClick={handleToggleComparador}
+          disabled={reportes.length < 2}
+          title={reportes.length < 2 ? 'Necesitas al menos 2 reportes para comparar' : 'Comparar dos reportes'}
+        >
+          ⇄ Comparar
+        </button>
         <div className="toolbar-spacer" />
-        <span className="hint">{reportes.length} reporte(s) en el historial</span>
+        <span className="hint">{reportes.length} reporte(s)</span>
       </Toolbar>
 
       {mostrarFormulario && (
@@ -94,6 +110,10 @@ export default function ReportesPage() {
           subidoPor={currentUser?.nombre || 'Desconocido'}
           onReporteSubido={handleReporteSubido}
         />
+      )}
+
+      {mostrarComparador && (
+        <ComparadorReportes reportes={reportes} />
       )}
 
       <TabBar
@@ -111,7 +131,7 @@ export default function ReportesPage() {
           reportes.length > 3 && (
             <input
               type="text"
-              placeholder="Filtrar pestañas..."
+              placeholder="Filtrar pestañas…"
               value={busquedaTabs}
               onChange={(e) => setBusquedaTabs(e.target.value)}
               style={{ width: 180 }}
@@ -120,7 +140,7 @@ export default function ReportesPage() {
         }
       />
 
-      {contenidoActivo && (
+      {contenidoActivo && !mostrarComparador && (
         <VisorReporte
           key={contenidoActivo.reporte.id}
           reporte={contenidoActivo.reporte}
