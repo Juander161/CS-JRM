@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
-import { parseInventoryArrayBuffer } from '../utils/parseInventoryFile.js';
+import { parseInventoryArrayBuffer, combinarInventarios } from '../utils/parseInventoryFile.js';
 
 // Replica la estructura real del "Reporte OH": columna "Item" duplicada
 // (SheetJS la renombra a "Item_1"), varias filas por el mismo código de
@@ -40,5 +40,36 @@ describe('parseInventoryArrayBuffer con el formato real del Reporte OH', () => {
   it('no confunde la columna "Item" duplicada (Item_1) con la descripción', () => {
     const item = inventario.get('1000029486');
     expect(item.descripcion).toBe('CAP: FINE QUALITY');
+  });
+});
+
+describe('combinarInventarios (varios archivos/días seleccionados a la vez)', () => {
+  it('suma el disponible de un mismo Item entre varios archivos', () => {
+    const dia1 = new Map([['1000029486', { itemCode: '1000029486', descripcion: 'CAP', disponible: 6, demanda: null }]]);
+    const dia2 = new Map([['1000029486', { itemCode: '1000029486', descripcion: '', disponible: 4, demanda: null }]]);
+
+    const combinado = combinarInventarios([dia1, dia2]);
+
+    expect(combinado.get('1000029486').disponible).toBe(10);
+  });
+
+  it('conserva items que solo aparecen en uno de los archivos', () => {
+    const dia1 = new Map([['A', { itemCode: 'A', descripcion: '', disponible: 1, demanda: null }]]);
+    const dia2 = new Map([['B', { itemCode: 'B', descripcion: '', disponible: 2, demanda: null }]]);
+
+    const combinado = combinarInventarios([dia1, dia2]);
+
+    expect(combinado.get('A').disponible).toBe(1);
+    expect(combinado.get('B').disponible).toBe(2);
+  });
+
+  it('suma demanda cuando está presente y conserva la descripción del primero que la tenga', () => {
+    const dia1 = new Map([['A', { itemCode: 'A', descripcion: '', disponible: 1, demanda: 5 }]]);
+    const dia2 = new Map([['A', { itemCode: 'A', descripcion: 'DESC REAL', disponible: 2, demanda: 3 }]]);
+
+    const combinado = combinarInventarios([dia1, dia2]);
+
+    expect(combinado.get('A').demanda).toBe(8);
+    expect(combinado.get('A').descripcion).toBe('DESC REAL');
   });
 });

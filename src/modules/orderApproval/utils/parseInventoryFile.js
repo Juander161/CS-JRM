@@ -95,3 +95,32 @@ export function parseInventoryArrayBuffer(arrayBuffer) {
 
   return inventario;
 }
+
+// Combina varios mapas de inventario (uno por archivo/día seleccionado) en
+// uno solo. Si un mismo código de Item aparece en más de un archivo, se
+// suman sus cantidades disponibles (mismo criterio que ya se usa dentro de
+// un solo archivo para filas repetidas del mismo Item en distintos
+// Locators): cada archivo representa material que se va sumando al
+// disponible total, no una fotografía que reemplaza a la anterior.
+export function combinarInventarios(mapas) {
+  const combinado = new Map();
+
+  for (const mapa of mapas) {
+    for (const [codigo, item] of mapa) {
+      const existente = combinado.get(codigo);
+      if (existente) {
+        existente.disponible += item.disponible;
+        if (item.demanda !== null) {
+          existente.demanda = (existente.demanda || 0) + item.demanda;
+        }
+        if (!existente.descripcion && item.descripcion) {
+          existente.descripcion = item.descripcion;
+        }
+      } else {
+        combinado.set(codigo, { ...item });
+      }
+    }
+  }
+
+  return combinado;
+}
