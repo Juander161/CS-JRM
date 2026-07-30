@@ -13,10 +13,9 @@ import { exportarHistorialExcel } from './utils/exportHistorialExcel.js';
 import { usePermission } from '../../context/PermissionsContext.jsx';
 import { loadSessionJSON, saveSessionJSON, removeSessionItem } from '../../services/storage/sessionStore.js';
 import {
-  listarInventarios,
-  agregarInventario,
-  obtenerArchivoInventario,
-} from './utils/inventarioStore.js';
+  listarReportesInventario,
+  obtenerArchivoReporte,
+} from '../../services/reporteHub.js';
 
 const UMBRAL_DEFECTO = 30;
 const MARGEN_DIAS_DEFECTO = 3;
@@ -32,11 +31,9 @@ export default function OrderApprovalPage() {
   const [mostrarReglas, setMostrarReglas] = useState(false);
   const [textoSolicitud, setTextoSolicitud] = useState('');
 
-  // Historial de archivos de inventario guardados (metadata ligera)
+  // Reportes de tipo inventario disponibles en el módulo de Reportes
   const [archivosInventario, setArchivosInventario] = useState([]);
-  // IDs de los archivos seleccionados para la comparación actual
   const [seleccionados, setSeleccionados] = useState([]);
-  const [cargandoInventario, setCargandoInventario] = useState(false);
   const [inventarioError, setInventarioError] = useState('');
 
   const [umbral, setUmbral] = useState(UMBRAL_DEFECTO);
@@ -46,12 +43,21 @@ export default function OrderApprovalPage() {
   const [historial, setHistorial] = useState([]);
 
   useEffect(() => {
-    const archivos = listarInventarios();
+    const archivos = listarReportesInventario();
     setArchivosInventario(archivos);
-    // Pre-seleccionar el más reciente si existe
     if (archivos.length > 0) setSeleccionados([archivos[0].id]);
     setHistorial(loadSessionJSON(HISTORIAL_KEY, []));
   }, []);
+
+  // Refresca la lista cada vez que el panel de nueva comparación se abre
+  // (el usuario pudo haber ido a Reportes a cargar un archivo entre tanto)
+  useEffect(() => {
+    if (mostrarFormulario) {
+      const archivos = listarReportesInventario();
+      setArchivosInventario(archivos);
+      if (!seleccionados.length && archivos.length) setSeleccionados([archivos[0].id]);
+    }
+  }, [mostrarFormulario]);
 
   const { solicitudes: solicitudesParseadas, lineasNoReconocidas } = useMemo(
     () => parseRequestText(textoSolicitud),
@@ -59,32 +65,14 @@ export default function OrderApprovalPage() {
   );
   const totalItems = solicitudesParseadas.reduce((acc, s) => acc + s.items.length, 0);
 
-  async function handleSubirArchivo(file) {
-    setCargandoInventario(true);
-    setInventarioError('');
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      // Validar que el archivo sea parseable antes de guardarlo
-      parseInventoryArrayBuffer(arrayBuffer);
-      const metadata = await agregarInventario({ nombreArchivo: file.name, arrayBuffer });
-      const actualizados = listarInventarios();
-      setArchivosInventario(actualizados);
-      setSeleccionados([metadata.id]);
-    } catch (error) {
-      setInventarioError(error.message);
-    } finally {
-      setCargandoInventario(false);
-    }
-  }
-
   async function handleComparar() {
     if (!seleccionados.length || !solicitudesParseadas.length) return;
     setInventarioError('');
     try {
       const mapas = await Promise.all(
         seleccionados.map(async (id) => {
-          const arrayBuffer = await obtenerArchivoInventario(id);
-          if (!arrayBuffer) throw new Error(`No se encontró el archivo con id ${id} en la base de datos local.`);
+          const arrayBuffer = await obtenerArchivoReporte(id);
+          if (!arrayBuffer) throw new Error(`Reporte con id ${id} no encontrado en el almacén local.`);
           return parseInventoryArrayBuffer(arrayBuffer);
         })
       );
@@ -99,7 +87,10 @@ export default function OrderApprovalPage() {
       setMostrarFormulario(false);
 
       const hora = new Date().toLocaleTimeString('es-MX');
-      const nuevoHistorial = [...historial, ...evaluado.map((solicitud) => ({ hora, solicitud }))];
+      const nuevoHistorial = [
+        ...historial,
+        ...evaluado.map((solicitud) => ({ hora, solicitud })),
+      ];
       setHistorial(nuevoHistorial);
       saveSessionJSON(HISTORIAL_KEY, nuevoHistorial);
     } catch (error) {
@@ -112,7 +103,7 @@ export default function OrderApprovalPage() {
     removeSessionItem(HISTORIAL_KEY);
   }
 
-  // Inventario combinado en vivo (solo para BusquedaManual, sin bloquear UI)
+  // Inventario combinado en vivo para BusquedaManual
   const [inventarioVivo, setInventarioVivo] = useState(null);
   useEffect(() => {
     if (!seleccionados.length) { setInventarioVivo(null); return; }
@@ -121,7 +112,7 @@ export default function OrderApprovalPage() {
       try {
         const mapas = await Promise.all(
           seleccionados.map(async (id) => {
-            const ab = await obtenerArchivoInventario(id);
+            const ab = await obtenerArchivoReporte(id);
             return ab ? parseInventoryArrayBuffer(ab) : new Map();
           })
         );
@@ -150,9 +141,6 @@ export default function OrderApprovalPage() {
           archivos={archivosInventario}
           seleccionados={seleccionados}
           onSeleccionChange={setSeleccionados}
-          onSubirArchivo={handleSubirArchivo}
-          cargando={cargandoInventario}
-          error={inventarioError}
         />
         <div className="toolbar-separator" />
         <button
@@ -194,8 +182,7 @@ export default function OrderApprovalPage() {
           {lineasNoReconocidas.length > 0 && (
             <div className="warning-box">
               {lineasNoReconocidas.length} línea(s) parecen encabezado o texto de solicitud pero no
-              se reconocieron con el formato esperado (revisa mayúsculas/espacios, o avisa para
-              ajustar el lector):
+              se reconocieron con el formato esperado:
               <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
                 {lineasNoReconocidas.map((linea, idx) => (
                   <li key={idx}><code>{linea}</code></li>
@@ -204,13 +191,22 @@ export default function OrderApprovalPage() {
             </div>
           )}
 
+          {inventarioError && (
+            <div className="warning-box" style={{ borderColor: '#b91c1c' }}>
+              {inventarioError}
+            </div>
+          )}
+
           <BusquedaManual inventario={inventarioVivo} />
 
           <Card title="Comparar">
             <p className="hint">
-              {solicitudesParseadas.length} solicitud(es) detectada(s), {totalItems} artículo(s) en total.
+              {solicitudesParseadas.length} solicitud(es) detectada(s), {totalItems} artículo(s).
               {seleccionados.length > 1 && (
-                <> Comparando contra <strong>{seleccionados.length} archivos</strong> de disponibilidad combinados.</>
+                <> Combinando <strong>{seleccionados.length} reportes</strong> de disponibilidad.</>
+              )}
+              {seleccionados.length === 0 && (
+                <> <strong style={{ color: '#b91c1c' }}>Selecciona al menos un reporte de inventario en la barra.</strong></>
               )}
             </p>
             <button
