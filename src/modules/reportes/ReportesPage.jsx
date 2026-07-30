@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Card from '../../components/Card.jsx';
 import Toolbar from '../../components/Toolbar.jsx';
 import TabBar from '../../components/TabBar.jsx';
@@ -11,27 +11,40 @@ import { descargarArchivo } from './utils/descargarArchivo.js';
 import { usePermission, usePermissionsContext } from '../../context/PermissionsContext.jsx';
 
 export default function ReportesPage() {
-  const puedeVer = usePermission('reportes', 'view');
-  const puedeSubir = usePermission('reportes', 'upload');
+  const puedeVer     = usePermission('reportes', 'view');
+  const puedeSubir   = usePermission('reportes', 'upload');
   const puedeExportar = usePermission('reportes', 'export');
   const puedeEliminar = usePermission('reportes', 'eliminar');
   const { currentUser } = usePermissionsContext();
 
   const [reportes, setReportes] = useState(listarReportes);
+  const [filtroTipo, setFiltroTipo] = useState('');
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [mostrarComparador, setMostrarComparador] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [contenidoActivo, setContenidoActivo] = useState(null);
   const [busquedaTabs, setBusquedaTabs] = useState('');
 
-  const tabsFiltrados = useMemo(() => {
-    if (!busquedaTabs.trim()) return reportes;
-    const texto = busquedaTabs.toLowerCase();
-    return reportes.filter(
-      (r) => r.nombreArchivo.toLowerCase().includes(texto) || r.tipo.toLowerCase().includes(texto)
-    );
-  }, [reportes, busquedaTabs]);
+  // Tipos únicos disponibles para el select
+  const tiposDisponibles = useMemo(
+    () => [...new Set(reportes.map((r) => r.tipo))].sort(),
+    [reportes]
+  );
 
+  // Reportes que pasan el filtro de tipo
+  const reportesDeTipo = useMemo(
+    () => filtroTipo ? reportes.filter((r) => r.tipo === filtroTipo) : reportes,
+    [reportes, filtroTipo]
+  );
+
+  // Adicionalmente filtrado por texto en la barra de pestañas
+  const tabsFiltrados = useMemo(() => {
+    if (!busquedaTabs.trim()) return reportesDeTipo;
+    const q = busquedaTabs.toLowerCase();
+    return reportesDeTipo.filter((r) => r.nombreArchivo.toLowerCase().includes(q));
+  }, [reportesDeTipo, busquedaTabs]);
+
+  // Abre el contenido de un reporte en el visor
   async function abrirReporte(reporte) {
     setActiveId(reporte.id);
     setMostrarComparador(false);
@@ -39,6 +52,19 @@ export default function ReportesPage() {
     if (!arrayBuffer) { setContenidoActivo(null); return; }
     const { columnas, filas } = parseGenericSheet(arrayBuffer);
     setContenidoActivo({ reporte, columnas, filas, arrayBuffer });
+  }
+
+  // Al montar: abrir el primer reporte automáticamente (evita pantalla en blanco)
+  useEffect(() => {
+    const lista = listarReportes();
+    if (lista.length > 0) abrirReporte(lista[0]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Al cambiar tipo: abrir el primer reporte de ese tipo
+  function handleFiltroTipo(tipo) {
+    setFiltroTipo(tipo);
+    const lista = tipo ? reportes.filter((r) => r.tipo === tipo) : reportes;
+    if (lista.length > 0) abrirReporte(lista[0]);
   }
 
   function handleSelectTab(id) {
@@ -61,17 +87,13 @@ export default function ReportesPage() {
     if (activeId === id) {
       setActiveId(null);
       setContenidoActivo(null);
-      if (actualizados.length) abrirReporte(actualizados[0]);
+      const resta = filtroTipo ? actualizados.filter((r) => r.tipo === filtroTipo) : actualizados;
+      if (resta.length) abrirReporte(resta[0]);
     }
   }
 
   function handleDescargarActivo() {
     if (contenidoActivo) descargarArchivo(contenidoActivo.reporte.nombreArchivo, contenidoActivo.arrayBuffer);
-  }
-
-  function handleToggleComparador() {
-    setMostrarComparador((v) => !v);
-    if (!mostrarComparador) setMostrarFormulario(false);
   }
 
   if (!puedeVer) {
@@ -93,16 +115,39 @@ export default function ReportesPage() {
             {mostrarFormulario ? 'Cancelar' : '+ Cargar reporte'}
           </button>
         )}
+        <div className="toolbar-separator" />
+
+        {/* Filtro por tipo y botón de comparador */}
+        {tiposDisponibles.length > 1 && (
+          <select
+            value={filtroTipo}
+            onChange={(e) => handleFiltroTipo(e.target.value)}
+            style={{ fontSize: 13 }}
+            title="Filtrar pestañas por tipo de reporte"
+          >
+            <option value="">Todos los tipos</option>
+            {tiposDisponibles.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        )}
         <button
           className={mostrarComparador ? 'primary' : 'secondary'}
-          onClick={handleToggleComparador}
-          disabled={reportes.length < 2}
-          title={reportes.length < 2 ? 'Necesitas al menos 2 reportes para comparar' : 'Comparar dos reportes'}
+          onClick={() => { setMostrarComparador((v) => !v); setMostrarFormulario(false); }}
+          disabled={reportesDeTipo.length < 2}
+          title={reportesDeTipo.length < 2
+            ? 'Necesitas al menos 2 reportes del mismo tipo para comparar'
+            : 'Comparar dos reportes (cambios día a día)'}
         >
           ⇄ Comparar
         </button>
+
         <div className="toolbar-spacer" />
-        <span className="hint">{reportes.length} reporte(s)</span>
+        <span className="hint">
+          {reportesDeTipo.length !== reportes.length
+            ? `${reportesDeTipo.length} de ${reportes.length} reporte(s)`
+            : `${reportes.length} reporte(s)`}
+        </span>
       </Toolbar>
 
       {mostrarFormulario && (
@@ -113,7 +158,7 @@ export default function ReportesPage() {
       )}
 
       {mostrarComparador && (
-        <ComparadorReportes reportes={reportes} />
+        <ComparadorReportes reportes={reportesDeTipo} tipoFiltrado={filtroTipo} />
       )}
 
       <TabBar
@@ -126,9 +171,13 @@ export default function ReportesPage() {
         activeId={activeId}
         onSelect={handleSelectTab}
         onClose={handleCerrarTab}
-        emptyMessage="Todavía no se ha cargado ningún reporte. Usa '+ Cargar reporte' arriba."
+        emptyMessage={
+          filtroTipo
+            ? `No hay reportes de tipo "${filtroTipo}". Cambia el tipo o carga uno nuevo.`
+            : "Todavía no se ha cargado ningún reporte. Usa '+ Cargar reporte' arriba."
+        }
         extra={
-          reportes.length > 3 && (
+          reportesDeTipo.length > 3 && (
             <input
               type="text"
               placeholder="Filtrar pestañas…"
