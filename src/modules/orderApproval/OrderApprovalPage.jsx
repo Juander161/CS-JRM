@@ -20,6 +20,7 @@ import {
 const UMBRAL_DEFECTO = 30;
 const MARGEN_DIAS_DEFECTO = 3;
 const MARGEN_AMBAR_DEFECTO = 7;
+const DEBOUNCE_MS = 400;
 
 const HISTORIAL_KEY = 'order-approval-historial';
 
@@ -51,44 +52,46 @@ export default function OrderApprovalPage() {
     () => parseRequestText(textoSolicitud),
     [textoSolicitud]
   );
-  const totalItems = solicitudesParseadas.reduce((acc, s) => acc + s.items.length, 0);
 
-  async function handleComparar() {
-    if (!seleccionados.length || !solicitudesParseadas.length) return;
-    setInventarioError('');
-    try {
-      const mapas = await Promise.all(
-        seleccionados.map(async (id) => {
-          const arrayBuffer = await obtenerArchivoReporte(id);
-          if (!arrayBuffer) throw new Error(`Reporte con id ${id} no encontrado en el almacén local.`);
-          return parseInventoryArrayBuffer(arrayBuffer);
-        })
-      );
-      const inventarioCombinado = combinarInventarios(mapas);
-
-      const evaluado = evaluarSolicitudes(solicitudesParseadas, inventarioCombinado, {
-        umbralPorcentaje: umbral / 100,
-        margenDiasRdd: margenDias,
-        margenAmbarPorcentaje: margenAmbar / 100,
-      });
-      setResultado(evaluado);
-
-      const hora = new Date().toLocaleTimeString('es-MX');
-      const nuevoHistorial = [
-        ...historial,
-        ...evaluado.map((solicitud) => ({ hora, solicitud })),
-      ];
-      setHistorial(nuevoHistorial);
-      saveSessionJSON(HISTORIAL_KEY, nuevoHistorial);
-    } catch (error) {
-      setInventarioError(error.message);
+  // Comparación automática: se dispara 400 ms después de que el texto
+  // deja de cambiar, o cuando cambian los reportes seleccionados o las reglas.
+  useEffect(() => {
+    if (!solicitudesParseadas.length) {
+      setResultado([]);
+      return;
     }
-  }
+    if (!seleccionados.length) return;
 
-  function handleVaciarHistorial() {
-    setHistorial([]);
-    removeSessionItem(HISTORIAL_KEY);
-  }
+    const timer = setTimeout(async () => {
+      setInventarioError('');
+      try {
+        const mapas = await Promise.all(
+          seleccionados.map(async (id) => {
+            const ab = await obtenerArchivoReporte(id);
+            if (!ab) throw new Error(`Reporte ${id} no encontrado en el almacén local.`);
+            return parseInventoryArrayBuffer(ab);
+          })
+        );
+        const combinado = combinarInventarios(mapas);
+        const evaluado = evaluarSolicitudes(solicitudesParseadas, combinado, {
+          umbralPorcentaje: umbral / 100,
+          margenDiasRdd: margenDias,
+          margenAmbarPorcentaje: margenAmbar / 100,
+        });
+        setResultado(evaluado);
+        const hora = new Date().toLocaleTimeString('es-MX');
+        setHistorial((prev) => {
+          const nuevo = [...prev, ...evaluado.map((solicitud) => ({ hora, solicitud }))];
+          saveSessionJSON(HISTORIAL_KEY, nuevo);
+          return nuevo;
+        });
+      } catch (err) {
+        setInventarioError(err.message);
+      }
+    }, DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [solicitudesParseadas, seleccionados, umbral, margenDias, margenAmbar]);
 
   // Inventario combinado en vivo para BusquedaManual en la toolbar
   const [inventarioVivo, setInventarioVivo] = useState(null);
@@ -109,11 +112,16 @@ export default function OrderApprovalPage() {
     return () => { cancelado = true; };
   }, [seleccionados]);
 
+  function handleVaciarHistorial() {
+    setHistorial([]);
+    removeSessionItem(HISTORIAL_KEY);
+  }
+
   if (!puedeVer) {
     return <Card title="Order Approval">No tienes permiso para ver esta sección.</Card>;
   }
 
-  const puedeComparar = seleccionados.length > 0 && solicitudesParseadas.length > 0;
+  const totalItems = solicitudesParseadas.reduce((acc, s) => acc + s.items.length, 0);
 
   return (
     <>
@@ -121,8 +129,8 @@ export default function OrderApprovalPage() {
         {puedeEjecutar && (
           <button
             className="secondary"
-            onClick={() => { setTextoSolicitud(''); setInventarioError(''); }}
-            title="Limpiar el cuadro de texto para iniciar una nueva comparación"
+            onClick={() => { setTextoSolicitud(''); setInventarioError(''); setResultado([]); }}
+            title="Limpiar el cuadro para iniciar una nueva comparación"
           >
             Limpiar
           </button>
@@ -168,14 +176,13 @@ export default function OrderApprovalPage() {
         )}
       </Toolbar>
 
-      {/* El formulario siempre está visible — no requiere abrir con un botón */}
       {puedeEjecutar && (
         <>
           <RequestTextInput valor={textoSolicitud} onChange={setTextoSolicitud} />
 
           {lineasNoReconocidas.length > 0 && (
             <div className="warning-box">
-              {lineasNoReconocidas.length} línea(s) no reconocidas con el formato esperado:
+              {lineasNoReconocidas.length} línea(s) no reconocidas:
               <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
                 {lineasNoReconocidas.map((linea, idx) => (
                   <li key={idx}><code>{linea}</code></li>
@@ -190,26 +197,18 @@ export default function OrderApprovalPage() {
             </div>
           )}
 
-          <Card title="Comparar">
-            <p className="hint">
-              {solicitudesParseadas.length > 0
-                ? <>
-                    {solicitudesParseadas.length} solicitud(es) · {totalItems} artículo(s).
-                    {seleccionados.length > 1 && <> Combinando <strong>{seleccionados.length} reportes</strong>.</>}
-                  </>
-                : 'Pega el texto de la solicitud arriba para continuar.'}
-              {seleccionados.length === 0 && (
-                <> <strong style={{ color: '#b91c1c' }}>Selecciona un reporte de inventario en la barra.</strong></>
-              )}
+          {solicitudesParseadas.length > 0 && (
+            <p className="hint" style={{ padding: '4px 0' }}>
+              {solicitudesParseadas.length} solicitud(es) · {totalItems} artículo(s)
+              {seleccionados.length > 1 && <> · combinando <strong>{seleccionados.length} reportes</strong></>}
             </p>
-            <button
-              className="primary"
-              disabled={!puedeComparar}
-              onClick={handleComparar}
-            >
-              Comparar contra disponibilidad
-            </button>
-          </Card>
+          )}
+
+          {seleccionados.length === 0 && textoSolicitud.trim() && (
+            <div className="warning-box">
+              Selecciona al menos un reporte de inventario en la barra para comparar.
+            </div>
+          )}
         </>
       )}
 
