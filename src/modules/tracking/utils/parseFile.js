@@ -10,13 +10,21 @@ function encontrarColumna(fila, nombreBuscado) {
   return encontrada ? fila[encontrada] : undefined;
 }
 
-export async function parseTrackingFile(file, carriersValidos) {
-  const arrayBuffer = await file.arrayBuffer();
-  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-  const primeraHoja = workbook.Sheets[workbook.SheetNames[0]];
-  const filas = XLSX.utils.sheet_to_json(primeraHoja, { defval: '' });
+function filasDesdeWorkbook(workbook) {
+  // Lee todas las hojas que tengan la columna WAYBILL y las combina
+  const todasLasFilas = [];
+  for (const nombre of workbook.SheetNames) {
+    const hoja = workbook.Sheets[nombre];
+    const filas = XLSX.utils.sheet_to_json(hoja, { defval: '' });
+    if (filas.length && Object.keys(filas[0]).some((k) => normalizarClave(k) === 'WAYBILL')) {
+      todasLasFilas.push(...filas);
+    }
+  }
+  return todasLasFilas;
+}
 
-  const registros = filas
+function mapearRegistros(filas, carriersValidos) {
+  return filas
     .map((fila) => ({
       waybill: encontrarColumna(fila, 'WAYBILL'),
       carrier: encontrarColumna(fila, 'CARRIER'),
@@ -24,8 +32,19 @@ export async function parseTrackingFile(file, carriersValidos) {
     }))
     .filter((r) => r.waybill && r.carrier && r.scanLocation)
     .filter((r) => carriersValidos.includes(String(r.carrier).trim()));
+}
 
-  return registros;
+export async function parseTrackingFile(file, carriersValidos) {
+  const arrayBuffer = await file.arrayBuffer();
+  return parseTrackingArrayBuffer(arrayBuffer, carriersValidos);
+}
+
+// Versión que trabaja desde un ArrayBuffer ya en memoria (para cuando el
+// archivo viene del módulo de Reportes en vez de una subida directa).
+export function parseTrackingArrayBuffer(arrayBuffer, carriersValidos) {
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+  const filas = filasDesdeWorkbook(workbook);
+  return mapearRegistros(filas, carriersValidos);
 }
 
 export function extraerScanLocations(registros) {

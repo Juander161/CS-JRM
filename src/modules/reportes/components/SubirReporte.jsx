@@ -3,6 +3,7 @@ import Card from '../../../components/Card.jsx';
 import { getTiposReporte, addTipoReporte } from '../config/tiposReporte.js';
 import { parseGenericSheet, validarEstructuraReporte } from '../utils/parseGenericSheet.js';
 import { agregarReporte } from '../utils/reportesStore.js';
+import { detectarTipoSugerido } from '../../../services/reporteHub.js';
 
 export default function SubirReporte({ subidoPor, onReporteSubido }) {
   const inputRef = useRef(null);
@@ -16,10 +17,17 @@ export default function SubirReporte({ subidoPor, onReporteSubido }) {
 
   function handleSeleccionarArchivo(e) {
     const file = e.target.files?.[0];
-    if (file) {
-      setArchivo(file);
-      setError('');
-    }
+    if (!file) return;
+    setArchivo(file);
+    setError('');
+    // Auto-detecta el tipo por las columnas del archivo
+    file.arrayBuffer().then((ab) => {
+      try {
+        const { columnas } = parseGenericSheet(ab);
+        const sugerido = detectarTipoSugerido(columnas);
+        if (sugerido && tipos.includes(sugerido)) setTipo(sugerido);
+      } catch { /* no bloquea si el archivo es ilegible en este punto */ }
+    });
   }
 
   function handleAgregarTipo() {

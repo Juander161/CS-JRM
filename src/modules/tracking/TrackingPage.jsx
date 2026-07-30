@@ -1,14 +1,13 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Card from '../../components/Card.jsx';
 import Toolbar from '../../components/Toolbar.jsx';
 import TabBar from '../../components/TabBar.jsx';
-import FileUpload from './components/FileUpload.jsx';
 import ScanLocationSelect from './components/ScanLocationSelect.jsx';
 import CarrierCheckboxes from './components/CarrierCheckboxes.jsx';
 import ResultsReport from './components/ResultsReport.jsx';
 import CarrierWhitelistEditor from './components/CarrierWhitelistEditor.jsx';
 import {
-  parseTrackingFile,
+  parseTrackingArrayBuffer,
   extraerScanLocations,
   extraerCarriersPorLocation,
 } from './utils/parseFile.js';
@@ -17,6 +16,16 @@ import { getCarriersWhitelist, addCarrier, removeCarrier } from './config/carrie
 import { getScraperMode, setScraperMode, MODOS_SCRAPER } from './config/scraperModeConfig.js';
 import { crearArchivoNuevo, actualizarArchivoExistente } from './utils/exportExcelStyled.js';
 import { usePermission } from '../../context/PermissionsContext.jsx';
+import {
+  listarReportesEmbarques,
+  obtenerArchivoReporte,
+} from '../../services/reporteHub.js';
+
+function formatearFecha(iso) {
+  return new Date(iso).toLocaleString('es-MX', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+}
 
 export default function TrackingPage() {
   const puedeVer = usePermission('tracking', 'view');
@@ -27,7 +36,12 @@ export default function TrackingPage() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [scraperMode, setScraperModeState] = useState(getScraperMode);
   const [carriersWhitelist, setCarriersWhitelist] = useState(getCarriersWhitelist);
-  const [fileName, setFileName] = useState('');
+
+  // Reportes de embarques disponibles (del módulo de Reportes)
+  const [reportesEmbarques, setReportesEmbarques] = useState([]);
+  const [reporteSeleccionadoId, setReporteSeleccionadoId] = useState('');
+  const [reporteNombre, setReporteNombre] = useState('');
+
   const [registros, setRegistros] = useState([]);
   const [scanLocations, setScanLocations] = useState([]);
   const [scanLocationSeleccionado, setScanLocationSeleccionado] = useState('');
@@ -37,17 +51,43 @@ export default function TrackingPage() {
   const [progreso, setProgreso] = useState(null);
   const [busquedas, setBusquedas] = useState([]);
   const [activeId, setActiveId] = useState(null);
+  const [errorReporte, setErrorReporte] = useState('');
   const inputArchivoRef = useRef(null);
 
-  async function handleFileSelected(file) {
-    setFileName(file.name);
-    const datos = await parseTrackingFile(file, carriersWhitelist);
-    setRegistros(datos);
-    const locations = extraerScanLocations(datos);
-    setScanLocations(locations);
+  useEffect(() => {
+    const lista = listarReportesEmbarques();
+    setReportesEmbarques(lista);
+    if (lista.length > 0) setReporteSeleccionadoId(lista[0].id);
+  }, []);
+
+  // Recarga la lista de reportes cuando se abre el formulario
+  useEffect(() => {
+    if (mostrarFormulario) {
+      const lista = listarReportesEmbarques();
+      setReportesEmbarques(lista);
+      if (!reporteSeleccionadoId && lista.length) setReporteSeleccionadoId(lista[0].id);
+    }
+  }, [mostrarFormulario]);
+
+  async function handleCargarReporte(id) {
+    if (!id) return;
+    setErrorReporte('');
+    setRegistros([]);
+    setScanLocations([]);
     setScanLocationSeleccionado('');
     setCarriersDisponibles([]);
     setCarriersSeleccionados([]);
+    try {
+      const arrayBuffer = await obtenerArchivoReporte(id);
+      if (!arrayBuffer) throw new Error('No se encontró el archivo en el almacén local.');
+      const datos = parseTrackingArrayBuffer(arrayBuffer, carriersWhitelist);
+      setRegistros(datos);
+      setReporteNombre(reportesEmbarques.find((r) => r.id === id)?.nombreArchivo ?? '');
+      const locations = extraerScanLocations(datos);
+      setScanLocations(locations);
+    } catch (err) {
+      setErrorReporte(err.message);
+    }
   }
 
   function handleScanLocationChange(valor) {
@@ -123,13 +163,48 @@ export default function TrackingPage() {
           </button>
         )}
         <div className="toolbar-separator" />
-        <span className="hint">
-          Archivo de trackings: {fileName ? <strong>{fileName}</strong> : 'ninguno cargado'}
-        </span>
+
+        {/* Selector de reporte de embarques */}
+        {reportesEmbarques.length === 0 ? (
+          <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted, #9ca3af)' }}>
+            Sin reportes de embarques — carga uno en <strong>Reportes</strong>
+          </span>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted, #6b7280)', whiteSpace: 'nowrap' }}>
+              Reporte:
+            </span>
+            <select
+              value={reporteSeleccionadoId}
+              onChange={(e) => setReporteSeleccionadoId(e.target.value)}
+              style={{ fontSize: '0.82rem', maxWidth: 260 }}
+            >
+              {reportesEmbarques.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {formatearFecha(r.fechaSubida)} — {r.nombreArchivo}
+                </option>
+              ))}
+            </select>
+            <button
+              className="secondary"
+              style={{ fontSize: '0.78rem' }}
+              onClick={() => handleCargarReporte(reporteSeleccionadoId)}
+              disabled={!reporteSeleccionadoId}
+            >
+              Cargar
+            </button>
+            {reporteNombre && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted, #6b7280)' }}>
+                ✓ {registros.length} trackings
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="toolbar-spacer" />
         {puedeConfigurarFuente ? (
           <label className="hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            Fuente de datos:
+            Fuente:
             <select value={scraperMode} onChange={(e) => handleCambiarModo(e.target.value)}>
               {MODOS_SCRAPER.map((m) => (
                 <option key={m.value} value={m.value}>{m.label}</option>
@@ -138,7 +213,7 @@ export default function TrackingPage() {
           </label>
         ) : (
           <span className="hint">
-            Fuente de datos: {MODOS_SCRAPER.find((m) => m.value === scraperMode)?.label}
+            Fuente: {MODOS_SCRAPER.find((m) => m.value === scraperMode)?.label}
           </span>
         )}
         {puedeExportar && busquedas.length > 0 && (
@@ -166,17 +241,29 @@ export default function TrackingPage() {
           {scraperMode === 'scraping' ? (
             <div className="warning-box">
               Fuente de datos: <strong>Scraping real (ups.com)</strong>. Cada búsqueda hace
-              consultas reales al sitio de UPS (vía la función serverless <code>/api/scrape</code>)
-              mientras la API oficial no esté autorizada; puede ser más lento y fallar si UPS
-              cambia su página o limita las consultas. Cuando la API oficial se autorice, se
-              podrá cambiar de fuente aquí mismo sin tocar el resto del flujo.
+              consultas reales al sitio de UPS vía la función serverless <code>/api/scrape</code>.
             </div>
           ) : (
             <div className="warning-box">
-              Fuente de datos: <strong>Simulado</strong>. Los resultados se generan localmente,
-              sin salir a internet. Cambia a "Scraping real" arriba para consultar ups.com de
-              verdad (mientras se autoriza la API oficial del carrier).
+              Fuente de datos: <strong>Simulado</strong>. Sin salida a internet.
+              Cambia a "Scraping real" en la barra para consultar ups.com.
             </div>
+          )}
+
+          {errorReporte && (
+            <div className="warning-box" style={{ borderColor: '#b91c1c' }}>{errorReporte}</div>
+          )}
+
+          {registros.length === 0 && !errorReporte && (
+            <Card>
+              <p className="hint">
+                Selecciona un reporte de embarques en la barra y presiona <strong>Cargar</strong>
+                {' '}para extraer los trackings disponibles.
+                {reportesEmbarques.length === 0 && (
+                  <> Primero carga el archivo <code>*Rpt.xlsx</code> en la sección de <strong>Reportes</strong>.</>
+                )}
+              </p>
+            </Card>
           )}
 
           <CarrierWhitelistEditor
@@ -185,7 +272,6 @@ export default function TrackingPage() {
             onRemove={(c) => setCarriersWhitelist(removeCarrier(c))}
           />
 
-          <FileUpload onFileSelected={handleFileSelected} fileName={fileName} />
           {scanLocations.length > 0 && (
             <ScanLocationSelect
               opciones={scanLocations}
