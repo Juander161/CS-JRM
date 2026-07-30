@@ -4,13 +4,49 @@
 
 import puppeteer from 'puppeteer-core';
 import { existsSync } from 'node:fs';
+import { platform } from 'node:os';
 
-// Chromium preinstalado en el entorno de desarrollo
-const CHROMIUM_CANDIDATES = [
-  process.env.CHROMIUM_PATH,
-  '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-  '/opt/pw-browsers/chromium',
-].filter(Boolean).filter(existsSync);
+// Detecta el navegador disponible según el sistema operativo.
+// En Windows usa Edge (preinstalado por defecto).
+// En Linux usa el Chromium del entorno de desarrollo (CCR).
+// Se puede sobreescribir con la variable de entorno BROWSER_PATH.
+function encontrarNavegador() {
+  if (process.env.BROWSER_PATH && existsSync(process.env.BROWSER_PATH)) {
+    return process.env.BROWSER_PATH;
+  }
+
+  const os = platform();
+
+  if (os === 'win32') {
+    const candidatos = [
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    ];
+    return candidatos.find(existsSync) ?? null;
+  }
+
+  if (os === 'darwin') {
+    const candidatos = [
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    ];
+    return candidatos.find(existsSync) ?? null;
+  }
+
+  // Linux — entorno CCR tiene Chromium preinstalado
+  const candidatos = [
+    '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+    '/opt/pw-browsers/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+  ];
+  return candidatos.find(existsSync) ?? null;
+}
+
+const RUTA_NAVEGADOR = encontrarNavegador();
 
 const TIMEOUT_MS = 20000;
 const CONCURRENCIA = 3;
@@ -36,15 +72,15 @@ function buildChromiumArgs() {
 
 async function obtenerBrowser() {
   if (!browserPromise) {
-    const executablePath = CHROMIUM_CANDIDATES[0];
-    if (!executablePath) {
+    if (!RUTA_NAVEGADOR) {
       throw new Error(
-        'No se encontró Chromium local. Configura la variable de entorno CHROMIUM_PATH ' +
-        'apuntando al ejecutable de Chrome/Chromium.'
+        'No se encontró ningún navegador compatible (Edge, Chrome o Chromium). ' +
+        'Configura la variable de entorno BROWSER_PATH con la ruta al ejecutable.'
       );
     }
+    console.log(`[dev-scrape] Usando navegador: ${RUTA_NAVEGADOR}`);
     browserPromise = puppeteer.launch({
-      executablePath,
+      executablePath: RUTA_NAVEGADOR,
       headless: true,
       args: buildChromiumArgs(),
     });
