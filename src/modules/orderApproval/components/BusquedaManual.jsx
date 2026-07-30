@@ -1,54 +1,39 @@
 import React, { useState } from 'react';
-import Card from '../../../components/Card.jsx';
 
-// Consulta rápida "código de Item -> disponible" para casos que no vienen
-// en el formato de correo (preguntas sueltas, verificaciones puntuales),
-// usando el mismo Excel de disponibilidad ya cargado arriba.
+// Versión compacta para la barra de herramientas: input + resultado inline.
+// Si no hay inventario cargado, no se muestra nada.
 export default function BusquedaManual({ inventario }) {
   const [codigo, setCodigo] = useState('');
 
   if (!inventario) return null;
 
-  const resultado = codigo.trim() ? inventario.get(codigo.trim().toUpperCase()) : null;
+  const clave = codigo.trim().toUpperCase();
+  const resultado = clave ? inventario.get(clave) : null;
 
   return (
-    <Card title="Búsqueda manual de disponibilidad">
-      <p className="hint">
-        Consulta rápida de un código de Item contra el Excel de disponibilidad ya cargado,
-        sin necesidad de pegar una solicitud completa.
-      </p>
-      <div className="field-row">
-        <div className="field">
-          <label>Código de Item</label>
-          <input
-            type="text"
-            value={codigo}
-            onChange={(e) => setCodigo(e.target.value)}
-            placeholder="Ej. 2000097477"
-          />
-        </div>
-      </div>
-      {codigo.trim() && (
-        resultado ? (
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th><th>Descripción</th><th>Cantidad disponible</th><th>Demanda/Consumo</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>{resultado.itemCode}</td>
-                <td>{resultado.descripcion || '—'}</td>
-                <td>{resultado.disponible}</td>
-                <td>{resultado.demanda ?? '—'}</td>
-              </tr>
-            </tbody>
-          </table>
-        ) : (
-          <p className="hint">No se encontró el código "{codigo.trim()}" en el Excel cargado.</p>
-        )
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted, #6b7280)', whiteSpace: 'nowrap' }}>
+        Consulta rápida
+      </span>
+      <input
+        type="text"
+        value={codigo}
+        onChange={(e) => setCodigo(e.target.value)}
+        placeholder="Código de Item"
+        style={{ width: 140, fontSize: '0.82rem' }}
+        title="Escribe un código de Item para consultar su disponibilidad"
+      />
+      {clave && (
+        <span style={{
+          fontSize: '0.72rem',
+          whiteSpace: 'nowrap',
+          color: resultado ? 'var(--color-success, #15803d)' : 'var(--color-text-muted, #9ca3af)',
+        }}>
+          {resultado
+            ? `✓ ${resultado.disponible} uds — ${resultado.descripcion || resultado.itemCode}`
+            : `"${clave}" no encontrado`}
+        </span>
       )}
-    </Card>
+    </div>
   );
 }
