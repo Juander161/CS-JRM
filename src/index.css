@@ -427,3 +427,115 @@ th {
   gap: 6px;
   font-size: 13px;
 }
+
+/* ──────────────────────────────────────────────
+   Responsive
+────────────────────────────────────────────── */
+
+/* Botón hamburguesa — solo aparece en móvil */
+.menu-hamburguesa {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 20px;
+  color: #475569;
+  flex-shrink: 0;
+  padding: 0;
+}
+.menu-hamburguesa:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+/* Fondo oscuro detrás del cajón lateral — oculto por defecto */
+.sidebar-overlay {
+  display: none;
+}
+
+/* ── Tablet (≤ 1024 px): sidebar icon-only por defecto ── */
+/* El JS inicializa colapsada=true cuando innerWidth ≤ 1024,
+   así que no se necesita CSS adicional; .colapsada lo maneja. */
+
+/* ── Móvil (≤ 640 px): sidebar como cajón deslizante ── */
+@media (max-width: 640px) {
+  /* Sacar la sidebar del flujo flex y convertirla en cajón */
+  .sidebar {
+    position: fixed !important;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 300;
+    width: 230px !important;
+    padding: 20px 16px !important;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease-in-out;
+    box-shadow: none;
+  }
+  .sidebar.sidebar-movil-abierta {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Restaurar layout expandido cuando el cajón está abierto, incluso
+     si la clase .colapsada sigue presente por el estado JS */
+  .sidebar.colapsada.sidebar-movil-abierta .sidebar-header {
+    justify-content: space-between;
+  }
+  .sidebar.colapsada.sidebar-movil-abierta .nav-item {
+    justify-content: flex-start;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  /* Fondo que oscurece el contenido detrás del cajón */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 299;
+  }
+
+  /* Mostrar hamburguesa */
+  .menu-hamburguesa {
+    display: flex;
+  }
+
+  /* Espaciado más compacto */
+  .app-main {
+    padding: 12px;
+    gap: 12px;
+  }
+  .app-header {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  /* Ocultar texto descriptivo en el header para no sobrecargar */
+  .header-info {
+    display: none;
+  }
+  .card {
+    padding: 14px;
+  }
+  .toolbar {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  /* Separadores verticales se ven raros en toolbar wraparound */
+  .toolbar-separator {
+    display: none;
+  }
+
+  /* Objetivos táctiles mínimos de 40 px */
+  button.primary,
+  button.secondary,
+  button.danger {
+    min-height: 40px;
+  }
+}

@@ -65,39 +65,41 @@ function SolicitudPanel({ solicitud }) {
         </div>
       )}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Descripción</th>
-            <th>Qty solicitada</th>
-            <th>Cantidad disponible</th>
-            <th>% consumo</th>
-            <th>Estado</th>
-            <th>Motivo</th>
-          </tr>
-        </thead>
-        <tbody>
-          {solicitud.items.map((item, idx) => (
-            <tr key={`${item.itemCode}-${idx}`}>
-              <td>{item.itemCode}</td>
-              <td>{item.descripcionInventario || item.descripcion}</td>
-              <td>
-                {item.qty}
-                {item.duplicados > 1 && (
-                  <span className="hint"> (combinado x{item.duplicados})</span>
-                )}
-              </td>
-              <td>{item.disponible === null ? '—' : item.disponible}</td>
-              <td>{formatearPorcentaje(item.porcentajeConsumo)}</td>
-              <td>
-                <Badge tone={TONE_POR_ESTADO[item.estado] || 'neutral'}>{item.estado}</Badge>
-              </td>
-              <td className="hint">{item.motivo}</td>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ minWidth: 560 }}>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Descripción</th>
+              <th>Qty solicitada</th>
+              <th>Cantidad disponible</th>
+              <th>% consumo</th>
+              <th>Estado</th>
+              <th>Motivo</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {solicitud.items.map((item, idx) => (
+              <tr key={`${item.itemCode}-${idx}`}>
+                <td>{item.itemCode}</td>
+                <td>{item.descripcionInventario || item.descripcion}</td>
+                <td>
+                  {item.qty}
+                  {item.duplicados > 1 && (
+                    <span className="hint"> (combinado x{item.duplicados})</span>
+                  )}
+                </td>
+                <td>{item.disponible === null ? '—' : item.disponible}</td>
+                <td>{formatearPorcentaje(item.porcentajeConsumo)}</td>
+                <td>
+                  <Badge tone={TONE_POR_ESTADO[item.estado] || 'neutral'}>{item.estado}</Badge>
+                </td>
+                <td className="hint">{item.motivo}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Card>
   );
 }
