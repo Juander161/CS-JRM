@@ -74,6 +74,11 @@ function combinarItemsDuplicados(items) {
 
 // Divide el texto pegado en líneas y va agrupando cada encabezado "PRDF: ..."
 // con los renglones de artículo que le siguen, hasta el próximo encabezado.
+//
+// También soporta pegar solo líneas de artículo SIN encabezado PRDF: en ese
+// caso todos los items se agrupan en una solicitud sintética con
+// sinEncabezado:true. La validación de RDD se omite automáticamente porque
+// rdd queda como `undefined` (distinto de `null` que es "fecha ilegible").
 export function parseRequestText(texto) {
   if (!texto || !texto.trim()) {
     return { solicitudes: [], lineasNoReconocidas: [] };
@@ -82,6 +87,7 @@ export function parseRequestText(texto) {
   const lineas = texto.split(/\r?\n/);
   const solicitudesCrudas = [];
   const lineasNoReconocidas = [];
+  const itemsHuerfanos = []; // items antes del primer encabezado PRDF
   let actual = null;
 
   for (const lineaOriginal of lineas) {
@@ -113,13 +119,19 @@ export function parseRequestText(texto) {
     }
 
     const itemMatch = linea.match(ITEM_REGEX);
-    if (itemMatch && actual) {
+    if (itemMatch) {
       const [, itemCode, qty, descripcion] = itemMatch;
-      actual.items.push({
+      const item = {
         itemCode: itemCode.trim(),
         qty: Number(qty.trim()) || 0,
         descripcion: descripcion.trim(),
-      });
+      };
+      if (actual) {
+        actual.items.push(item);
+      } else {
+        // Item sin encabezado PRDF precedente — se acumula aparte.
+        itemsHuerfanos.push(item);
+      }
     } else if (actual) {
       // Línea dentro de un bloque de solicitud que no es un encabezado ni
       // un renglón de artículo reconocible: se reporta en vez de ignorarla.
@@ -129,10 +141,30 @@ export function parseRequestText(texto) {
     }
   }
 
-  const solicitudes = solicitudesCrudas.map((s) => ({
-    ...s,
-    items: combinarItemsDuplicados(s.items),
-  }));
+  // Solicitud sintética para items pegados sin encabezado PRDF.
+  // rdd: undefined (no null) → evaluarItem omite la validación de RDD.
+  const huerfanosCombinados = combinarItemsDuplicados(itemsHuerfanos);
+  const solicitudHuerfana = huerfanosCombinados.length > 0
+    ? [{
+        bo: '(sin encabezado)',
+        rddRaw: '',
+        rdd: undefined,
+        eventDate: '',
+        cliente: '',
+        rep: '',
+        items: huerfanosCombinados,
+        lineasNoReconocidas: [],
+        sinEncabezado: true,
+      }]
+    : [];
+
+  const solicitudes = [
+    ...solicitudHuerfana,
+    ...solicitudesCrudas.map((s) => ({
+      ...s,
+      items: combinarItemsDuplicados(s.items),
+    })),
+  ];
 
   return { solicitudes, lineasNoReconocidas };
 }

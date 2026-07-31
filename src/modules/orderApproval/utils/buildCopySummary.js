@@ -19,7 +19,10 @@ export function construirResumenCopiable(solicitud) {
   if (conteos.Revisar) partes.push(`${conteos.Revisar} a revisar`);
   if (conteos['Sin dato']) partes.push(`${conteos['Sin dato']} sin dato de inventario`);
 
-  let texto = `BO# ${solicitud.bo} (${solicitud.cliente}) — ${estadoGeneral}. ${total} item(s): ${partes.join(', ')}.`;
+  const encabezado = solicitud.sinEncabezado
+    ? `Consulta rápida (sin BO#)`
+    : `BO# ${solicitud.bo} (${solicitud.cliente})`;
+  let texto = `${encabezado} — ${estadoGeneral}. ${total} item(s): ${partes.join(', ')}.`;
 
   const conMotivo = solicitud.items.filter((item) => item.estado !== 'Aprobado' && item.motivo);
   if (conMotivo.length) {

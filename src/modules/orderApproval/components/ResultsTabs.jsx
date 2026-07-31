@@ -43,15 +43,25 @@ function BotonCopiar({ solicitud }) {
 }
 
 function SolicitudPanel({ solicitud }) {
+  const titulo = solicitud.sinEncabezado
+    ? `Consulta rápida — ${solicitud.items.length} item(s)`
+    : `BO# ${solicitud.bo} — ${solicitud.cliente}`;
+
   return (
     <Card
-      title={`BO# ${solicitud.bo} — ${solicitud.cliente}`}
+      title={titulo}
       actions={<BotonCopiar solicitud={solicitud} />}
     >
-      <p className="hint">
-        RDD: {solicitud.rddRaw} ({formatearFecha(solicitud.rdd)}) · Rep: {solicitud.rep}
-        {solicitud.eventDate && solicitud.eventDate !== 'N/A' && ` · Evento: ${solicitud.eventDate}`}
-      </p>
+      {solicitud.sinEncabezado ? (
+        <p className="hint">
+          Items consultados sin encabezado PRDF — la validación de RDD no aplica.
+        </p>
+      ) : (
+        <p className="hint">
+          RDD: {solicitud.rddRaw} ({formatearFecha(solicitud.rdd)}) · Rep: {solicitud.rep}
+          {solicitud.eventDate && solicitud.eventDate !== 'N/A' && ` · Evento: ${solicitud.eventDate}`}
+        </p>
+      )}
 
       {solicitud.lineasNoReconocidas?.length > 0 && (
         <div className="warning-box">
@@ -134,7 +144,12 @@ export default function ResultsTabs({ solicitudes }) {
   return (
     <>
       <TabBar
-        tabs={visibles.map((s) => ({ id: s.bo, label: `BO# ${s.bo}`, sublabel: s.cliente, closable: true }))}
+        tabs={visibles.map((s) => ({
+          id: s.bo,
+          label: s.sinEncabezado ? 'Consulta rápida' : `BO# ${s.bo}`,
+          sublabel: s.sinEncabezado ? `${s.items.length} items` : s.cliente,
+          closable: true,
+        }))}
         activeId={activa?.bo}
         onSelect={setActiveId}
         onClose={handleClose}
