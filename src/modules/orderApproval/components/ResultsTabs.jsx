@@ -63,6 +63,16 @@ function SolicitudPanel({ solicitud }) {
         </p>
       )}
 
+      {(() => {
+        const sinDato = solicitud.items.filter((i) => i.estado === 'Sin dato');
+        return sinDato.length > 0 ? (
+          <div className="warning-box">
+            <strong>{sinDato.length} item(s) no encontrado(s)</strong> en el reporte de inventario activo:{' '}
+            {sinDato.map((i) => <code key={i.itemCode} style={{ marginRight: 6 }}>{i.itemCode}</code>)}
+          </div>
+        ) : null;
+      })()}
+
       {solicitud.lineasNoReconocidas?.length > 0 && (
         <div className="warning-box">
           {solicitud.lineasNoReconocidas.length} línea(s) dentro de este BO# no se reconocieron
