@@ -288,7 +288,30 @@ export default function TrackingPage() {
             puedeBuscar={puedeBuscar}
           />
           {cargando && progreso && (
-            <Card>Procesando {progreso.hecho} de {progreso.total}...</Card>
+            <Card>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <span style={{ fontSize: 13 }}>
+                  Consultando trackings… {progreso.hecho} de {progreso.total}
+                  {progreso.total > 0 && (
+                    <> ({Math.round((progreso.hecho / progreso.total) * 100)}%)</>
+                  )}
+                </span>
+                <div style={{ background: 'var(--color-border, #e2e8f0)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      height: '100%',
+                      borderRadius: 4,
+                      background: 'var(--color-primary, #2563eb)',
+                      width: `${progreso.total > 0 ? Math.round((progreso.hecho / progreso.total) * 100) : 0}%`,
+                      transition: 'width 0.3s',
+                    }}
+                  />
+                </div>
+                <span className="hint" style={{ fontSize: 11 }}>
+                  Las consultas reales a UPS tardan ~25 seg por par de trackings. Con 6 llamadas paralelas, 114 registros toman ≈ 4 min.
+                </span>
+              </div>
+            </Card>
           )}
         </>
       )}

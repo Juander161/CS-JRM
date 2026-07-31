@@ -22,17 +22,24 @@
 import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
 
-// Vercel: sube el límite de tiempo de esta función (por defecto los planes
-// gratis/hobby dan 10s, insuficiente para varias navegaciones reales).
-// Ajustar según el plan contratado.
+// Vercel: sube el límite de tiempo de esta función.
+// Hobby plan: máx 60s. Pro plan: hasta 300s.
 export const config = {
   maxDuration: 60,
 };
 
-const CONCURRENCIA = 3;
-const TIMEOUT_NAVEGACION_MS = 20000;
+// Cada invocación procesa máx 2 items (secuencial dentro del handler) para
+// completar bien dentro del límite de 60s. El frontend paraliza N llamadas
+// simultáneas para maximizar el throughput — ver realScraper.js.
+const MAX_ITEMS_POR_LLAMADA = 2;
+const TIMEOUT_NAVEGACION_MS = 14000; // domcontentloaded es mucho más rápido
+const TIMEOUT_SELECTOR_MS = 8000;
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+// Tipos de recurso que bloqueamos — solo nos importa el texto de estado,
+// no imágenes, CSS, fuentes ni media.
+const TIPOS_A_BLOQUEAR = new Set(['image', 'stylesheet', 'font', 'media', 'other']);
 
 let browserPromise = null;
 
@@ -87,11 +94,27 @@ async function consultarUnTracking(browser, item) {
   const page = await browser.newPage();
   try {
     await page.setUserAgent(USER_AGENT);
+
+    // Bloquear recursos innecesarios para acelerar la carga de la página.
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (TIPOS_A_BLOQUEAR.has(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
     const url = `https://www.ups.com/track?loc=en_US&tracknum=${encodeURIComponent(item.waybill)}&requester=WT`;
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: TIMEOUT_NAVEGACION_MS });
+
+    // domcontentloaded dispara en cuanto se parsea el HTML (no espera JS ni
+    // assets), lo cual es mucho más rápido que networkidle2 en páginas con
+    // analytics/scripts que siguen haciendo peticiones.
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_NAVEGACION_MS });
+
     await page
-      .waitForSelector('[data-test="tt-leg-details-status"], .tt-status, .il-status', {
-        timeout: TIMEOUT_NAVEGACION_MS,
+      .waitForSelector('[data-test="tt-leg-details-status"], .tt-status, .il-status, .trackingStatusText', {
+        timeout: TIMEOUT_SELECTOR_MS,
       })
       .catch(() => null);
 
@@ -115,22 +138,6 @@ async function consultarUnTracking(browser, item) {
   }
 }
 
-async function consultarConConcurrenciaLimitada(browser, items) {
-  const resultados = new Array(items.length);
-  let siguienteIndice = 0;
-
-  async function trabajador() {
-    while (siguienteIndice < items.length) {
-      const indice = siguienteIndice++;
-      resultados[indice] = await consultarUnTracking(browser, items[indice]);
-    }
-  }
-
-  const trabajadores = Array.from({ length: Math.min(CONCURRENCIA, items.length) }, trabajador);
-  await Promise.all(trabajadores);
-  return resultados;
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método no permitido' });
@@ -141,9 +148,15 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Se esperaba { items: [{ waybill, carrier }, ...] }' });
   }
 
+  // Limitar el tamaño de lote para garantizar que la función termina a tiempo.
+  const lote = items.slice(0, MAX_ITEMS_POR_LLAMADA);
+
   try {
     const browser = await obtenerBrowser();
-    const resultados = await consultarConConcurrenciaLimitada(browser, items);
+    const resultados = [];
+    for (const item of lote) {
+      resultados.push(await consultarUnTracking(browser, item));
+    }
     return res.status(200).json({ resultados });
   } catch (error) {
     console.error('Error consultando trackings reales:', error);
