@@ -48,8 +48,10 @@ function encontrarNavegador() {
 
 const RUTA_NAVEGADOR = encontrarNavegador();
 
-const TIMEOUT_MS = 20000;
-const CONCURRENCIA = 3;
+const TIMEOUT_NAVEGACION_MS = 14000;
+const TIMEOUT_SELECTOR_MS = 8000;
+const MAX_ITEMS_POR_LLAMADA = 2;
+const TIPOS_A_BLOQUEAR = new Set(['image', 'stylesheet', 'font', 'media', 'other']);
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
@@ -118,10 +120,17 @@ async function consultarUno(browser, item) {
   const page = await browser.newPage();
   try {
     await page.setUserAgent(USER_AGENT);
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (TIPOS_A_BLOQUEAR.has(req.resourceType())) req.abort();
+      else req.continue();
+    });
     const url = `https://www.ups.com/track?loc=en_US&tracknum=${encodeURIComponent(item.waybill)}&requester=WT`;
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: TIMEOUT_MS });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_NAVEGACION_MS });
     await page
-      .waitForSelector('[data-test="tt-leg-details-status"], .tt-status, .il-status', { timeout: TIMEOUT_MS })
+      .waitForSelector('[data-test="tt-leg-details-status"], .tt-status, .il-status, .trackingStatusText', {
+        timeout: TIMEOUT_SELECTOR_MS,
+      })
       .catch(() => null);
     const { status, deliveryDate } = await extraerResultadoDePagina(page);
     return {
@@ -138,15 +147,11 @@ async function consultarUno(browser, item) {
 }
 
 async function consultarLote(browser, items) {
-  const resultados = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const idx = next++;
-      resultados[idx] = await consultarUno(browser, items[idx]);
-    }
+  const lote = items.slice(0, MAX_ITEMS_POR_LLAMADA);
+  const resultados = [];
+  for (const item of lote) {
+    resultados.push(await consultarUno(browser, item));
   }
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCIA, items.length) }, worker));
   return resultados;
 }
 
