@@ -4,6 +4,7 @@ import Toolbar from '../../components/Toolbar.jsx';
 import RequestTextInput from './components/RequestTextInput.jsx';
 import InventoryFilesPicker from './components/InventoryFilesPicker.jsx';
 import ThresholdConfig from './components/ThresholdConfig.jsx';
+import EmailIntegrationPanel from './components/EmailIntegrationPanel.jsx';
 import ResultsTabs from './components/ResultsTabs.jsx';
 import BusquedaManual from './components/BusquedaManual.jsx';
 import { parseRequestText } from './utils/parseRequestText.js';
@@ -12,17 +13,21 @@ import { evaluarSolicitudes } from './utils/evaluateRules.js';
 import { exportarHistorialExcel } from './utils/exportHistorialExcel.js';
 import { usePermission } from '../../context/PermissionsContext.jsx';
 import { loadSessionJSON, saveSessionJSON, removeSessionItem } from '../../services/storage/sessionStore.js';
+import { loadJSON, saveJSON } from '../../services/storage/localStore.js';
 import {
   listarReportesInventario,
   obtenerArchivoReporte,
 } from '../../services/reporteHub.js';
 
-const UMBRAL_DEFECTO = 30;
-const MARGEN_DIAS_DEFECTO = 3;
-const MARGEN_AMBAR_DEFECTO = 7;
-const DEBOUNCE_MS = 400;
+const UMBRAL_DEFECTO        = 30;
+const MARGEN_DIAS_DEFECTO   = 3;
+const MARGEN_AMBAR_DEFECTO  = 7;
+const CANTIDAD_MAX_DEFECTO  = 0;
+const CANTIDAD_MIN_DEFECTO  = 0;
+const DEBOUNCE_MS           = 400;
 
 const HISTORIAL_KEY = 'order-approval-historial';
+const REGLAS_KEY    = 'order-approval-reglas';
 
 export default function OrderApprovalPage() {
   const puedeVer = usePermission('orderApproval', 'view');
@@ -34,9 +39,26 @@ export default function OrderApprovalPage() {
   const [seleccionados, setSeleccionados] = useState([]);
   const [inventarioError, setInventarioError] = useState('');
 
-  const [umbral, setUmbral] = useState(UMBRAL_DEFECTO);
-  const [margenDias, setMargenDias] = useState(MARGEN_DIAS_DEFECTO);
-  const [margenAmbar, setMargenAmbar] = useState(MARGEN_AMBAR_DEFECTO);
+  // Reglas: se persisten en localStorage para sobrevivir recargas.
+  const reglasPersistidas = loadJSON(REGLAS_KEY, {});
+  const [umbral,           setUmbralRaw]           = useState(reglasPersistidas.umbral          ?? UMBRAL_DEFECTO);
+  const [margenDias,       setMargenDiasRaw]       = useState(reglasPersistidas.margenDias      ?? MARGEN_DIAS_DEFECTO);
+  const [margenAmbar,      setMargenAmbarRaw]      = useState(reglasPersistidas.margenAmbar     ?? MARGEN_AMBAR_DEFECTO);
+  const [cantidadMaxima,   setCantidadMaximaRaw]   = useState(reglasPersistidas.cantidadMaxima  ?? CANTIDAD_MAX_DEFECTO);
+  const [cantidadMinima,   setCantidadMinimaRaw]   = useState(reglasPersistidas.cantidadMinima  ?? CANTIDAD_MIN_DEFECTO);
+  const [codigosExcluidos, setCodigosExcluidosRaw] = useState(reglasPersistidas.codigosExcluidos ?? []);
+
+  function guardarReglas(patch) {
+    const actuales = loadJSON(REGLAS_KEY, {});
+    saveJSON(REGLAS_KEY, { ...actuales, ...patch });
+  }
+  function setUmbral(v)           { setUmbralRaw(v);           guardarReglas({ umbral: v }); }
+  function setMargenDias(v)       { setMargenDiasRaw(v);       guardarReglas({ margenDias: v }); }
+  function setMargenAmbar(v)      { setMargenAmbarRaw(v);      guardarReglas({ margenAmbar: v }); }
+  function setCantidadMaxima(v)   { setCantidadMaximaRaw(v);   guardarReglas({ cantidadMaxima: v }); }
+  function setCantidadMinima(v)   { setCantidadMinimaRaw(v);   guardarReglas({ cantidadMinima: v }); }
+  function setCodigosExcluidos(v) { setCodigosExcluidosRaw(v); guardarReglas({ codigosExcluidos: v }); }
+
   const [resultado, setResultado] = useState([]);
   const [historial, setHistorial] = useState([]);
   // Rastrea qué solicitudes ya están en el historial para no duplicarlas
@@ -76,9 +98,12 @@ export default function OrderApprovalPage() {
         );
         const combinado = combinarInventarios(mapas);
         const evaluado = evaluarSolicitudes(solicitudesParseadas, combinado, {
-          umbralPorcentaje: umbral / 100,
-          margenDiasRdd: margenDias,
+          umbralPorcentaje:     umbral / 100,
+          margenDiasRdd:        margenDias,
           margenAmbarPorcentaje: margenAmbar / 100,
+          cantidadMaxima,
+          cantidadMinima,
+          codigosExcluidos,
         });
         setResultado(evaluado);
         // Solo agregar al historial si el texto de solicitudes cambió
@@ -166,12 +191,12 @@ export default function OrderApprovalPage() {
         <div className="ribbon-group">
           <div className="ribbon-group-body">
             <ThresholdConfig
-              umbral={umbral}
-              onUmbralChange={setUmbral}
-              margenDias={margenDias}
-              onMargenDiasChange={setMargenDias}
-              margenAmbar={margenAmbar}
-              onMargenAmbarChange={setMargenAmbar}
+              umbral={umbral}               onUmbralChange={setUmbral}
+              margenDias={margenDias}       onMargenDiasChange={setMargenDias}
+              margenAmbar={margenAmbar}     onMargenAmbarChange={setMargenAmbar}
+              cantidadMaxima={cantidadMaxima}   onCantidadMaximaChange={setCantidadMaxima}
+              cantidadMinima={cantidadMinima}   onCantidadMinimaChange={setCantidadMinima}
+              codigosExcluidos={codigosExcluidos} onCodigosExcluidosChange={setCodigosExcluidos}
             />
           </div>
           <div className="ribbon-group-label">Reglas</div>
@@ -185,6 +210,16 @@ export default function OrderApprovalPage() {
             <BusquedaManual inventario={inventarioVivo} />
           </div>
           <div className="ribbon-group-label">Búsqueda rápida</div>
+        </div>
+
+        {/* ── Grupo: Correos (Microsoft Graph API) ── */}
+        <div className="ribbon-group">
+          <div className="ribbon-group-body">
+            <EmailIntegrationPanel
+              onCorreosProcesados={(texto) => setTextoSolicitud(texto)}
+            />
+          </div>
+          <div className="ribbon-group-label">Correos</div>
         </div>
 
         {/* ── Grupo: Historial ── */}
