@@ -18,6 +18,51 @@
 // reporta en `lineasNoReconocidas` (global) o `solicitud.lineasNoReconocidas`
 // en vez de fallar en silencio, para poder ajustarlas con correos reales.
 
+// ── Limpieza de cadenas / hilos de correo ───────────────────────────────────
+// Elimina el "ruido" que aparece cuando el usuario pega texto de una cadena
+// de correo respondida o reenviada (Outlook, Gmail, etc.) para que el parser
+// solo vea las líneas PRDF e Item relevantes.
+//
+// Patrones descartados:
+//   - Líneas con prefijo de cita  "> texto" o ">> texto"
+//   - Cabeceras de correo:  From:/De: · Sent:/Enviado: · To:/Para: · Cc:
+//                           Subject:/Asunto: · Date:/Fecha:
+//   - Separadores de hilo:  ----- · _____ · =====  (≥5 caracteres)
+//   - Línea introductoria de cita: "On [fecha] … wrote:" / "El … escribió:"
+const PATRON_DESCARTAR = [
+  /^>+/,                             // cita > ó > >
+  /^-{5,}/,                          // -----Original Message-----
+  /^_{5,}/,                          // ________________________
+  /^={5,}/,                          // =========================
+  /^From:\s/i,
+  /^De:\s/i,
+  /^Sent:\s/i,
+  /^Enviado:\s/i,
+  /^To:\s/i,
+  /^Para:\s/i,
+  /^Cc:\s/i,
+  /^Subject:\s/i,
+  /^Asunto:\s/i,
+  /^Date:\s/i,
+  /^Fecha:\s/i,
+];
+// "On Mon, Jul 28, 2025 at 10:00 AM Someone <…> wrote:"
+// "El lun, 28 jul 2025 a las 10:00, Alguien <…> escribió:"
+const PATRON_WROTE = /^(On|El)\s.+\s(wrote|escribió)\s*:$/i;
+
+function limpiarTextoCorreo(texto) {
+  return texto
+    .split(/\r?\n/)
+    .filter((linea) => {
+      const t = linea.trim();
+      if (!t) return true; // preservar blancos (el split posterior los filtra)
+      if (PATRON_DESCARTAR.some((re) => re.test(t))) return false;
+      if (PATRON_WROTE.test(t)) return false;
+      return true;
+    })
+    .join('\n');
+}
+
 const MESES = {
   ENE: 0, JAN: 0,
   FEB: 1,
@@ -74,14 +119,20 @@ function combinarItemsDuplicados(items) {
 
 // Divide el texto pegado en líneas y va agrupando cada encabezado "PRDF: ..."
 // con los renglones de artículo que le siguen, hasta el próximo encabezado.
+//
+// También soporta pegar solo líneas de artículo SIN encabezado PRDF: en ese
+// caso todos los items se agrupan en una solicitud sintética con
+// sinEncabezado:true. La validación de RDD se omite automáticamente porque
+// rdd queda como `undefined` (distinto de `null` que es "fecha ilegible").
 export function parseRequestText(texto) {
   if (!texto || !texto.trim()) {
     return { solicitudes: [], lineasNoReconocidas: [] };
   }
 
-  const lineas = texto.split(/\r?\n/);
+  const lineas = limpiarTextoCorreo(texto).split(/\r?\n/);
   const solicitudesCrudas = [];
   const lineasNoReconocidas = [];
+  const itemsHuerfanos = []; // items antes del primer encabezado PRDF
   let actual = null;
 
   for (const lineaOriginal of lineas) {
@@ -113,13 +164,19 @@ export function parseRequestText(texto) {
     }
 
     const itemMatch = linea.match(ITEM_REGEX);
-    if (itemMatch && actual) {
+    if (itemMatch) {
       const [, itemCode, qty, descripcion] = itemMatch;
-      actual.items.push({
+      const item = {
         itemCode: itemCode.trim(),
         qty: Number(qty.trim()) || 0,
         descripcion: descripcion.trim(),
-      });
+      };
+      if (actual) {
+        actual.items.push(item);
+      } else {
+        // Item sin encabezado PRDF precedente — se acumula aparte.
+        itemsHuerfanos.push(item);
+      }
     } else if (actual) {
       // Línea dentro de un bloque de solicitud que no es un encabezado ni
       // un renglón de artículo reconocible: se reporta en vez de ignorarla.
@@ -129,10 +186,30 @@ export function parseRequestText(texto) {
     }
   }
 
-  const solicitudes = solicitudesCrudas.map((s) => ({
-    ...s,
-    items: combinarItemsDuplicados(s.items),
-  }));
+  // Solicitud sintética para items pegados sin encabezado PRDF.
+  // rdd: undefined (no null) → evaluarItem omite la validación de RDD.
+  const huerfanosCombinados = combinarItemsDuplicados(itemsHuerfanos);
+  const solicitudHuerfana = huerfanosCombinados.length > 0
+    ? [{
+        bo: '(sin encabezado)',
+        rddRaw: '',
+        rdd: undefined,
+        eventDate: '',
+        cliente: '',
+        rep: '',
+        items: huerfanosCombinados,
+        lineasNoReconocidas: [],
+        sinEncabezado: true,
+      }]
+    : [];
+
+  const solicitudes = [
+    ...solicitudHuerfana,
+    ...solicitudesCrudas.map((s) => ({
+      ...s,
+      items: combinarItemsDuplicados(s.items),
+    })),
+  ];
 
   return { solicitudes, lineasNoReconocidas };
 }

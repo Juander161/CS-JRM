@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Card from '../../components/Card.jsx';
 import Toolbar from '../../components/Toolbar.jsx';
 import RequestTextInput from './components/RequestTextInput.jsx';
@@ -40,6 +40,9 @@ export default function OrderApprovalPage() {
   const [margenAmbar, setMargenAmbar] = useState(MARGEN_AMBAR_DEFECTO);
   const [resultado, setResultado] = useState([]);
   const [historial, setHistorial] = useState([]);
+  // Rastrea qué solicitudes ya están en el historial para no duplicarlas
+  // cuando el usuario solo cambia reglas (umbral/días) sin cambiar el texto.
+  const solicitudesEnHistorialRef = useRef(null);
 
   useEffect(() => {
     const archivos = listarReportesInventario();
@@ -79,12 +82,17 @@ export default function OrderApprovalPage() {
           margenAmbarPorcentaje: margenAmbar / 100,
         });
         setResultado(evaluado);
-        const hora = new Date().toLocaleTimeString('es-MX');
-        setHistorial((prev) => {
-          const nuevo = [...prev, ...evaluado.map((solicitud) => ({ hora, solicitud }))];
-          saveSessionJSON(HISTORIAL_KEY, nuevo);
-          return nuevo;
-        });
+        // Solo agregar al historial si el texto de solicitudes cambió
+        // (no duplicar entradas al ajustar reglas sobre el mismo texto).
+        if (solicitudesParseadas !== solicitudesEnHistorialRef.current) {
+          solicitudesEnHistorialRef.current = solicitudesParseadas;
+          const hora = new Date().toLocaleTimeString('es-MX');
+          setHistorial((prev) => {
+            const nuevo = [...prev, ...evaluado.map((solicitud) => ({ hora, solicitud }))];
+            saveSessionJSON(HISTORIAL_KEY, nuevo);
+            return nuevo;
+          });
+        }
       } catch (err) {
         setInventarioError(err.message);
       }
