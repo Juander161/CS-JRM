@@ -40,13 +40,17 @@ export function diasHastaRdd(rddDate, hoy = new Date()) {
 export function evaluarItem(
   item,
   inventario,
-  { umbralPorcentaje, margenDiasRdd, margenAmbarPorcentaje = 0, rdd, rddRaw, ahora }
+  {
+    umbralPorcentaje, margenDiasRdd, margenAmbarPorcentaje = 0, rdd, rddRaw, ahora,
+    cantidadMaxima = 0, cantidadMinima = 0, codigosExcluidos = [],
+  }
 ) {
+  const codigoNorm = item.itemCode.toUpperCase();
   const dias = diasHastaRdd(rdd, ahora);
   const rddNoLegible = rdd === null;
   const rddEnRiesgo = dias !== null && dias < margenDiasRdd;
 
-  const infoInventario = inventario.get(item.itemCode.toUpperCase());
+  const infoInventario = inventario.get(codigoNorm);
   const disponible = infoInventario ? infoInventario.disponible : null;
   const demanda = infoInventario ? infoInventario.demanda : null;
 
@@ -55,7 +59,16 @@ export function evaluarItem(
   let estado;
   let motivo = '';
 
-  if (rddNoLegible) {
+  if (codigosExcluidos.length && codigosExcluidos.includes(codigoNorm)) {
+    estado = 'Rechazado';
+    motivo = 'Item en lista de exclusión de reglas';
+  } else if (cantidadMaxima > 0 && item.qty > cantidadMaxima) {
+    estado = 'Rechazado';
+    motivo = `Cantidad solicitada (${item.qty}) supera el máximo configurado (${cantidadMaxima})`;
+  } else if (cantidadMinima > 0 && item.qty < cantidadMinima) {
+    estado = 'Rechazado';
+    motivo = `Cantidad solicitada (${item.qty}) está por debajo del mínimo configurado (${cantidadMinima})`;
+  } else if (rddNoLegible) {
     estado = 'Revisar';
     motivo = `No se pudo interpretar la fecha RDD ("${rddRaw}"); confirma manualmente el margen de días antes de aprobar.`;
   } else if (rddEnRiesgo) {

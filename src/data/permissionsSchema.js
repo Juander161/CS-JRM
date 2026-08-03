@@ -32,6 +32,16 @@ export const SECTIONS = [
       { key: 'eliminar', label: 'Eliminar reportes del historial' },
     ],
   },
+  {
+    key: 'emailIntegration',
+    label: 'Integración de Correo (Microsoft Graph API)',
+    actions: [
+      { key: 'view',       label: 'Ver el panel de integración de correo' },
+      { key: 'connect',    label: 'Conectar cuenta de Microsoft 365' },
+      { key: 'readEmails', label: 'Leer correos del buzón y procesarlos' },
+      { key: 'sendEmails', label: 'Enviar respuestas y reenvíos automáticos' },
+    ],
+  },
 ];
 
 export const ROLES = ['admin', 'user'];
