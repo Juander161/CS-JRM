@@ -15,6 +15,7 @@ export function construirResumenCopiable(solicitud) {
 
   const partes = [];
   if (conteos.Aprobado) partes.push(`${conteos.Aprobado} aprobado(s)`);
+  if (conteos['N/A - Servicio']) partes.push(`${conteos['N/A - Servicio']} N/A (servicio)`);
   if (conteos.Rechazado) partes.push(`${conteos.Rechazado} rechazado(s)`);
   if (conteos.Revisar) partes.push(`${conteos.Revisar} a revisar`);
   if (conteos['Sin dato']) partes.push(`${conteos['Sin dato']} sin dato de inventario`);
@@ -37,10 +38,11 @@ export function construirResumenCopiable(solicitud) {
 // Genera una tabla con estilos inline para que se vea bien al pegarla en
 // un correo. Incluye encabezado de solicitud y todos los renglones de items.
 const COLOR_ESTADO = {
-  Aprobado:  '#2E7D32',
-  Rechazado: '#C62828',
-  Revisar:   '#92400E',
-  'Sin dato':'#475569',
+  Aprobado:       '#2E7D32',
+  Rechazado:      '#C62828',
+  Revisar:        '#92400E',
+  'Sin dato':     '#475569',
+  'N/A - Servicio': '#475569',
 };
 
 export function construirTablaHtml(solicitud) {

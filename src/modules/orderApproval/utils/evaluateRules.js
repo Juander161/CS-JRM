@@ -21,6 +21,16 @@
 
 const MS_POR_DIA = 1000 * 60 * 60 * 24;
 
+// Items de servicio/fulfilment (ej: "SERVICE: FULFILLMENT...", "FREIGHT:",
+// "HANDLING:") no aparecen en el Excel OH porque no son material físico;
+// en Oracle pueden tener cantidades negativas. Se marcan "N/A - Servicio"
+// para distinguirlos de "Sin dato" (items físicos no encontrados) y que
+// quede claro que se aprueban por criterio de negocio, no por inventario.
+const SERVICIO_RE = /^(SERVICE|FREIGHT|HANDLING|SETUP|MISCELLANEOUS|PACKAGING)\s*[:\-]/i;
+function esItemServicio(descripcion) {
+  return SERVICIO_RE.test(String(descripcion || '').trim());
+}
+
 export function diasHastaRdd(rddDate, hoy = new Date()) {
   if (!rddDate) return null;
   const hoyUTC = Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
@@ -52,8 +62,13 @@ export function evaluarItem(
     estado = 'Rechazado';
     motivo = `RDD a ${dias} día(s) (mínimo requerido: ${margenDiasRdd})`;
   } else if (disponible === null) {
-    estado = 'Sin dato';
-    motivo = 'Item no encontrado en el Excel de disponibilidad';
+    if (esItemServicio(item.descripcion)) {
+      estado = 'N/A - Servicio';
+      motivo = 'Item de servicio/fulfilment — no aplica inventario OH; aprobar según criterio de negocio.';
+    } else {
+      estado = 'Sin dato';
+      motivo = 'Item no encontrado en el Excel de disponibilidad';
+    }
   } else if (disponible === 0) {
     estado = 'Rechazado';
     motivo = 'Cantidad disponible es 0';
