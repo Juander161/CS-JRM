@@ -28,7 +28,6 @@ export default function OrderApprovalPage() {
   const puedeVer = usePermission('orderApproval', 'view');
   const puedeEjecutar = usePermission('orderApproval', 'run');
 
-  const [mostrarReglas, setMostrarReglas] = useState(false);
   const [textoSolicitud, setTextoSolicitud] = useState('');
 
   const [archivosInventario, setArchivosInventario] = useState([]);
@@ -134,33 +133,38 @@ export default function OrderApprovalPage() {
   return (
     <>
       <Toolbar>
+        {/* ── Grupo: Solicitud ── */}
         {puedeEjecutar && (
-          <button
-            className="secondary"
-            onClick={() => { setTextoSolicitud(''); setInventarioError(''); setResultado([]); }}
-            title="Limpiar el cuadro para iniciar una nueva comparación"
-          >
-            Limpiar
-          </button>
+          <div className="ribbon-group">
+            <div className="ribbon-group-body">
+              <button
+                className="btn-ribbon"
+                onClick={() => { setTextoSolicitud(''); setInventarioError(''); setResultado([]); }}
+                title="Limpiar el cuadro para iniciar una nueva comparación"
+              >
+                <span className="btn-ribbon-icon">✕</span>
+                <span className="btn-ribbon-label">Limpiar</span>
+              </button>
+            </div>
+            <div className="ribbon-group-label">Solicitud</div>
+          </div>
         )}
-        <div className="toolbar-separator" />
-        <InventoryFilesPicker
-          archivos={archivosInventario}
-          seleccionados={seleccionados}
-          onSeleccionChange={setSeleccionados}
-        />
-        <div className="toolbar-separator" />
-        <button
-          className="secondary"
-          onClick={() => setMostrarReglas((v) => !v)}
-          title="Configurar umbral de aprobación, zona ámbar y días RDD"
-          style={{ fontSize: '0.8rem' }}
-        >
-          ⚙ Reglas
-        </button>
-        {mostrarReglas && (
-          <>
-            <div className="toolbar-separator" />
+
+        {/* ── Grupo: Inventario ── */}
+        <div className="ribbon-group">
+          <div className="ribbon-group-body">
+            <InventoryFilesPicker
+              archivos={archivosInventario}
+              seleccionados={seleccionados}
+              onSeleccionChange={setSeleccionados}
+            />
+          </div>
+          <div className="ribbon-group-label">Inventario</div>
+        </div>
+
+        {/* ── Grupo: Reglas ── */}
+        <div className="ribbon-group">
+          <div className="ribbon-group-body">
             <ThresholdConfig
               umbral={umbral}
               onUmbralChange={setUmbral}
@@ -169,18 +173,43 @@ export default function OrderApprovalPage() {
               margenAmbar={margenAmbar}
               onMargenAmbarChange={setMargenAmbar}
             />
-          </>
-        )}
+          </div>
+          <div className="ribbon-group-label">Reglas</div>
+        </div>
+
         <div className="toolbar-spacer" />
-        <BusquedaManual inventario={inventarioVivo} />
+
+        {/* ── Grupo: Búsqueda ── */}
+        <div className="ribbon-group">
+          <div className="ribbon-group-body">
+            <BusquedaManual inventario={inventarioVivo} />
+          </div>
+          <div className="ribbon-group-label">Búsqueda rápida</div>
+        </div>
+
+        {/* ── Grupo: Historial ── */}
         {historial.length > 0 && (
-          <>
-            <div className="toolbar-separator" />
-            <button className="secondary" onClick={() => exportarHistorialExcel(historial)}>
-              Descargar historial (Excel)
-            </button>
-            <button className="danger" onClick={handleVaciarHistorial}>Vaciar historial</button>
-          </>
+          <div className="ribbon-group">
+            <div className="ribbon-group-body">
+              <button
+                className="btn-ribbon"
+                onClick={() => exportarHistorialExcel(historial)}
+                title="Descargar historial como Excel"
+              >
+                <span className="btn-ribbon-icon">📊</span>
+                <span className="btn-ribbon-label">Excel</span>
+              </button>
+              <button
+                className="btn-ribbon danger"
+                onClick={handleVaciarHistorial}
+                title="Vaciar todo el historial de esta sesión"
+              >
+                <span className="btn-ribbon-icon">🗑</span>
+                <span className="btn-ribbon-label">Vaciar</span>
+              </button>
+            </div>
+            <div className="ribbon-group-label">Historial</div>
+          </div>
         )}
       </Toolbar>
 

@@ -5,11 +5,19 @@ import TabBar from '../../../components/TabBar.jsx';
 import { construirTablaHtml, construirTablaTexto } from '../utils/buildCopySummary.js';
 
 const TONE_POR_ESTADO = {
-  Aprobado:  'success',
-  Rechazado: 'danger',
-  Revisar:   'warning',
-  'Sin dato':'neutral',
+  Aprobado:         'success',
+  Rechazado:        'danger',
+  Revisar:          'warning',
+  'Sin dato':       'neutral',
+  'N/A - Servicio': 'neutral',
 };
+
+function calcularEstadoGeneral(items) {
+  if (items.some((i) => i.estado === 'Rechazado')) return 'Rechazado';
+  if (items.some((i) => i.estado === 'Revisar'))   return 'Revisar';
+  if (items.some((i) => i.estado === 'Sin dato'))  return 'Sin dato';
+  return 'Aprobado';
+}
 
 function formatearFecha(fecha) {
   if (!fecha) return '—';
@@ -138,13 +146,21 @@ function SolicitudPanel({ solicitud }) {
 
   const rental = esRental(solicitud);
   const sinDato = solicitud.items.filter((i) => i.estado === 'Sin dato');
+  const estadoGeneral = calcularEstadoGeneral(solicitud.items);
 
   const titulo = solicitud.sinEncabezado
     ? `Consulta rápida — ${solicitud.items.length} item(s)`
     : `BO# ${solicitud.bo} — ${solicitud.cliente}`;
 
+  const acciones = (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <Badge tone={TONE_POR_ESTADO[estadoGeneral] || 'neutral'}>{estadoGeneral}</Badge>
+      <BotonCopiar solicitud={solicitud} />
+    </div>
+  );
+
   return (
-    <Card title={titulo} actions={<BotonCopiar solicitud={solicitud} />}>
+    <Card title={titulo} actions={acciones}>
 
       {/* Encabezado de solicitud */}
       {solicitud.sinEncabezado ? (

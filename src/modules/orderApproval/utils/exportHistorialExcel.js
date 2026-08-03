@@ -3,10 +3,11 @@ import ExcelJS from 'exceljs';
 const COLOR_HEADER     = 'FF2E75B6';
 const COLOR_HEADER_TXT = 'FFFFFFFF';
 const COLOR_POR_ESTADO = {
-  Aprobado:  'FF2E7D32',
-  Rechazado: 'FFC62828',
-  Revisar:   'FF92400E',
-  'Sin dato':'FF475569',
+  Aprobado:         'FF2E7D32',
+  Rechazado:        'FFC62828',
+  Revisar:          'FF92400E',
+  'Sin dato':       'FF475569',
+  'N/A - Servicio': 'FF475569',
 };
 
 // Nombre seguro para una hoja de Excel (máx 31 chars, sin [ ] : * ? / \)
