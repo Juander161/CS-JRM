@@ -24,6 +24,27 @@ function formatearFecha(fecha) {
   return fecha.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+// Hora de llegada del correo (modo automático).
+function formatearHoraLlegada(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatearFechaHoraLlegada(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleString('es-MX', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+// Clave estable de pestaña: las solicitudes automáticas traen `claveTab`
+// propia porque varios correos pueden repetir el mismo BO#.
+function claveDe(solicitud) {
+  return solicitud.claveTab ?? solicitud.bo;
+}
+
 function formatearPorcentaje(valor) {
   if (valor === null || valor === undefined) return '—';
   return `${(valor * 100).toFixed(1)}%`;
@@ -162,6 +183,19 @@ function SolicitudPanel({ solicitud }) {
   return (
     <Card title={titulo} actions={acciones}>
 
+      {/* Procedencia (solo modo automático) */}
+      {solicitud.automatica && (
+        <div style={{
+          background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6,
+          padding: '6px 10px', marginBottom: 8, fontSize: 11, color: '#1e40af',
+          display: 'flex', flexWrap: 'wrap', gap: '2px 14px',
+        }}>
+          <span>📥 <strong>Recibido:</strong> {formatearFechaHoraLlegada(solicitud.recibidoEn)}</span>
+          {solicitud.origen?.de     && <span><strong>De:</strong> {solicitud.origen.de}</span>}
+          {solicitud.origen?.asunto && <span><strong>Asunto:</strong> {solicitud.origen.asunto}</span>}
+        </div>
+      )}
+
       {/* Encabezado de solicitud */}
       {solicitud.sinEncabezado ? (
         <p className="hint">Items consultados sin encabezado PRDF — la validación de RDD no aplica.</p>
@@ -276,38 +310,42 @@ export default function ResultsTabs({ solicitudes }) {
   const [activeId, setActiveId]       = useState(null);
   const [descartados, setDescartados] = useState(() => new Set());
 
+  // En modo automático llegan solicitudes nuevas mientras se está revisando
+  // otra: no se reinicia la selección ni se reabren las pestañas cerradas.
+  // Solo se elige una pestaña cuando la activa dejó de existir.
   useEffect(() => {
-    setDescartados(new Set());
-    setActiveId(solicitudes[0]?.bo ?? null);
+    const claves = solicitudes.map(claveDe);
+    setActiveId((prev) => (prev && claves.includes(prev) ? prev : claves[0] ?? null));
   }, [solicitudes]);
 
   if (!solicitudes.length) return null;
 
-  const visibles = solicitudes.filter((s) => !descartados.has(s.bo));
-  const activa   = visibles.find((s) => s.bo === activeId) || visibles[0];
+  const visibles = solicitudes.filter((s) => !descartados.has(claveDe(s)));
+  const activa   = visibles.find((s) => claveDe(s) === activeId) || visibles[0];
 
-  function handleClose(bo) {
-    const nuevo = new Set(descartados);
-    nuevo.add(bo);
-    setDescartados(nuevo);
-    if (activeId === bo) {
-      const restante = visibles.find((s) => s.bo !== bo);
-      setActiveId(restante ? restante.bo : null);
+  function handleClose(clave) {
+    setDescartados((prev) => new Set(prev).add(clave));
+    if (activeId === clave) {
+      const restante = visibles.find((s) => claveDe(s) !== clave);
+      setActiveId(restante ? claveDe(restante) : null);
     }
   }
 
   return (
     <>
       <TabBar
-        tabs={visibles.map((s) => ({
-          id:       s.bo,
-          label:    s.sinEncabezado ? 'Consulta rápida' : `BO# ${s.bo}`,
-          sublabel: s.sinEncabezado ? `${s.items.length} items` : s.cliente,
-          closable: true,
-          // Indicador visual de Rental en la pestaña
-          ...(esRental(s) ? { label: `⚠ BO# ${s.bo}` } : {}),
-        }))}
-        activeId={activa?.bo}
+        tabs={visibles.map((s) => {
+          const base = s.sinEncabezado ? 'Consulta rápida' : `BO# ${s.bo}`;
+          return {
+            id:       claveDe(s),
+            label:    esRental(s) ? `⚠ ${base}` : base,
+            sublabel: s.automatica
+              ? `${formatearHoraLlegada(s.recibidoEn)} · ${s.cliente || `${s.items.length} items`}`
+              : s.sinEncabezado ? `${s.items.length} items` : s.cliente,
+            closable: true,
+          };
+        })}
+        activeId={activa ? claveDe(activa) : null}
         onSelect={setActiveId}
         onClose={handleClose}
       />

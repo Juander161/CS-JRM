@@ -10,7 +10,7 @@ import ResultsTabs from './components/ResultsTabs.jsx';
 import BusquedaManual from './components/BusquedaManual.jsx';
 import { parseRequestText } from './utils/parseRequestText.js';
 import { parseInventoryArrayBuffer, combinarInventarios } from './utils/parseInventoryFile.js';
-import { evaluarSolicitudes } from './utils/evaluateRules.js';
+import { evaluarSolicitud, evaluarSolicitudes } from './utils/evaluateRules.js';
 import { exportarHistorialExcel } from './utils/exportHistorialExcel.js';
 import { usePermission } from '../../context/PermissionsContext.jsx';
 import { loadSessionJSON, saveSessionJSON, removeSessionItem } from '../../services/storage/sessionStore.js';
@@ -31,6 +31,22 @@ const DEBOUNCE_MS = 150;
 
 const HISTORIAL_KEY = 'order-approval-historial';
 const REGLAS_KEY    = 'order-approval-reglas';
+const AUTO_KEY      = 'order-approval-auto';
+
+// Las solicitudes que llegan por el modo automático se guardan sin evaluar
+// (solo el parseo crudo). Al pasar por sessionStorage, `rdd` viaja como texto
+// ISO y hay que devolverlo a Date para que las reglas de RDD sigan aplicando.
+// Ojo con la distinción: `undefined` = sin encabezado PRDF (no se valida RDD),
+// `null` = fecha presente pero ilegible (se marca "Revisar").
+function revivirAuto(entradas) {
+  return entradas.map((entrada) => ({
+    ...entrada,
+    cruda: {
+      ...entrada.cruda,
+      rdd: entrada.cruda.rdd ? new Date(entrada.cruda.rdd) : entrada.cruda.rdd,
+    },
+  }));
+}
 
 export default function OrderApprovalPage() {
   const puedeVer = usePermission('orderApproval', 'view');
@@ -62,6 +78,11 @@ export default function OrderApprovalPage() {
   function setCantidadMinima(v)   { setCantidadMinimaRaw(v);   guardarReglas({ cantidadMinima: v }); }
   function setCodigosExcluidos(v) { setCodigosExcluidosRaw(v); guardarReglas({ codigosExcluidos: v }); }
 
+  // Solicitudes que entraron por el modo automático (vigilancia de carpeta).
+  // Se guardan SIN evaluar para poder re-evaluarlas si cambian las reglas o
+  // el reporte de inventario activo, igual que las pegadas a mano.
+  const [solicitudesAuto, setSolicitudesAuto] = useState([]);
+
   const [resultado, setResultado] = useState([]);
   const [historial, setHistorial] = useState([]);
   // Rastrea qué solicitudes ya están en el historial para no duplicarlas
@@ -73,6 +94,7 @@ export default function OrderApprovalPage() {
     setArchivosInventario(archivos);
     if (archivos.length > 0) setSeleccionados([archivos[0].id]);
     setHistorial(loadSessionJSON(HISTORIAL_KEY, []));
+    setSolicitudesAuto(revivirAuto(loadSessionJSON(AUTO_KEY, [])));
   }, []);
 
   const { solicitudes: solicitudesParseadas, lineasNoReconocidas } = useMemo(
@@ -114,40 +136,105 @@ export default function OrderApprovalPage() {
   // Se dispara al cambiar texto, reglas o cuando el inventario termina de
   // cargarse. El debounce corto solo absorbe el tiempo de pegado de texto.
   useEffect(() => {
-    if (!solicitudesParseadas.length) { setResultado([]); return; }
+    if (!solicitudesParseadas.length && !solicitudesAuto.length) { setResultado([]); return; }
     if (!inventarioCombinado) return;
 
     const timer = setTimeout(() => {
-      const evaluado = evaluarSolicitudes(solicitudesParseadas, inventarioCombinado, {
+      const opciones = {
         umbralPorcentaje:      umbral / 100,
         margenDiasRdd:         margenDias,
         margenAmbarPorcentaje: margenAmbar / 100,
         cantidadMaxima,
         cantidadMinima,
         codigosExcluidos,
-      });
-      setResultado(evaluado);
+      };
+
+      // Automáticas primero y de la más reciente a la más antigua: lo que
+      // acaba de llegar es lo que interesa revisar.
+      const evaluadasAuto = [...solicitudesAuto]
+        .sort((a, b) => b.recibidoEn.localeCompare(a.recibidoEn))
+        .map((entrada) => ({
+          ...evaluarSolicitud(entrada.cruda, inventarioCombinado, opciones),
+          claveTab:   entrada.id,
+          recibidoEn: entrada.recibidoEn,
+          origen:     entrada.origen,
+          automatica: true,
+        }));
+
+      const evaluadasManual = evaluarSolicitudes(solicitudesParseadas, inventarioCombinado, opciones)
+        .map((solicitud, idx) => ({ ...solicitud, claveTab: `manual#${idx}#${solicitud.bo}` }));
+
+      setResultado([...evaluadasAuto, ...evaluadasManual]);
+
       // Solo agregar al historial cuando cambia el texto (no al ajustar reglas).
       if (solicitudesParseadas !== solicitudesEnHistorialRef.current) {
         solicitudesEnHistorialRef.current = solicitudesParseadas;
-        const hora = new Date().toLocaleTimeString('es-MX');
-        setHistorial((prev) => {
-          const nuevo = [...prev, ...evaluado.map((solicitud) => ({ hora, solicitud }))];
-          saveSessionJSON(HISTORIAL_KEY, nuevo);
-          return nuevo;
-        });
+        if (evaluadasManual.length) {
+          const hora = new Date().toLocaleTimeString('es-MX');
+          setHistorial((prev) => {
+            const nuevo = [...prev, ...evaluadasManual.map((solicitud) => ({ hora, solicitud }))];
+            saveSessionJSON(HISTORIAL_KEY, nuevo);
+            return nuevo;
+          });
+        }
       }
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [solicitudesParseadas, inventarioCombinado, umbral, margenDias, margenAmbar, cantidadMaxima, cantidadMinima, codigosExcluidos]);
+  }, [solicitudesParseadas, solicitudesAuto, inventarioCombinado, umbral, margenDias, margenAmbar, cantidadMaxima, cantidadMinima, codigosExcluidos]);
 
-  const handleNuevoEmail = useCallback((cuerpo) => {
-    setTextoSolicitud((prev) => {
-      const sep = prev.trim() ? '\n\n' : '';
-      return prev + sep + cuerpo;
+  // Las automáticas entran al historial en cuanto se evalúan por primera vez,
+  // conservando su hora real de llegada (no la hora de la evaluación).
+  const autoEnHistorialRef = useRef(new Set());
+  useEffect(() => {
+    const nuevas = resultado.filter(
+      (s) => s.automatica && !autoEnHistorialRef.current.has(s.claveTab)
+    );
+    if (!nuevas.length) return;
+    nuevas.forEach((s) => autoEnHistorialRef.current.add(s.claveTab));
+    setHistorial((prev) => {
+      const nuevo = [
+        ...prev,
+        ...nuevas.map((solicitud) => ({
+          hora: new Date(solicitud.recibidoEn).toLocaleTimeString('es-MX'),
+          solicitud,
+        })),
+      ];
+      saveSessionJSON(HISTORIAL_KEY, nuevo);
+      return nuevo;
+    });
+  }, [resultado]);
+
+  // Modo automático: cada correo detectado se parsea y cada bloque PRDF que
+  // trae se convierte en su propia solicitud, con la hora en que llegó. NO se
+  // vuelca al cuadro de texto — si se acumulara ahí, 100 correos quedarían
+  // pegados en un solo bloque en vez de verse por separado.
+  const handleNuevoEmail = useCallback((cuerpo, meta) => {
+    const { solicitudes } = parseRequestText(cuerpo);
+    if (!solicitudes.length) return;
+
+    const recibidoEn = (meta?.procesadoEn ?? new Date()).toISOString();
+    const nuevas = solicitudes.map((cruda, idx) => ({
+      id: `${meta?.nombre || 'auto'}#${idx}`,
+      recibidoEn,
+      origen: { de: meta?.de || '', asunto: meta?.asunto || '', archivo: meta?.nombre || '' },
+      cruda,
+    }));
+
+    setSolicitudesAuto((prev) => {
+      // El watcher ya evita releer el mismo archivo, pero si se vuelve a
+      // seleccionar la carpeta el id repetido no debe duplicar la pestaña.
+      const vistos = new Set(prev.map((e) => e.id));
+      const combinadas = [...prev, ...nuevas.filter((e) => !vistos.has(e.id))];
+      saveSessionJSON(AUTO_KEY, combinadas);
+      return combinadas;
     });
   }, []);
+
+  function handleVaciarAuto() {
+    setSolicitudesAuto([]);
+    removeSessionItem(AUTO_KEY);
+  }
 
   function handleVaciarHistorial() {
     setHistorial([]);
@@ -175,6 +262,16 @@ export default function OrderApprovalPage() {
                 <span className="btn-ribbon-icon">✕</span>
                 <span className="btn-ribbon-label">Limpiar</span>
               </button>
+              {solicitudesAuto.length > 0 && (
+                <button
+                  className="btn-ribbon danger"
+                  onClick={handleVaciarAuto}
+                  title={`Cerrar las ${solicitudesAuto.length} solicitud(es) recibidas automáticamente`}
+                >
+                  <span className="btn-ribbon-icon">📭</span>
+                  <span className="btn-ribbon-label">Vaciar auto ({solicitudesAuto.length})</span>
+                </button>
+              )}
             </div>
             <div className="ribbon-group-label">Solicitud</div>
           </div>
