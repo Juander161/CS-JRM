@@ -24,7 +24,9 @@ const MARGEN_DIAS_DEFECTO   = 3;
 const MARGEN_AMBAR_DEFECTO  = 7;
 const CANTIDAD_MAX_DEFECTO  = 0;
 const CANTIDAD_MIN_DEFECTO  = 0;
-const DEBOUNCE_MS           = 400;
+// Debounce solo para el parseo de texto (mientras el usuario termina de pegar).
+// La evaluación en sí es síncrona y no necesita debounce largo.
+const DEBOUNCE_MS = 150;
 
 const HISTORIAL_KEY = 'order-approval-historial';
 const REGLAS_KEY    = 'order-approval-reglas';
@@ -77,17 +79,20 @@ export default function OrderApprovalPage() {
     [textoSolicitud]
   );
 
-  // Comparación automática: se dispara 400 ms después de que el texto
-  // deja de cambiar, o cuando cambian los reportes seleccionados o las reglas.
+  // ── Efecto 1: carga el inventario UNA SOLA VEZ cuando cambian los archivos
+  // seleccionados. El resultado queda en memoria y es compartido por la
+  // evaluación y la búsqueda manual — no se vuelve a leer IndexedDB al
+  // cambiar texto ni reglas.
+  const [inventarioCombinado, setInventarioCombinado] = useState(null);
   useEffect(() => {
-    if (!solicitudesParseadas.length) {
-      setResultado([]);
+    if (!seleccionados.length) {
+      setInventarioCombinado(null);
+      setInventarioError('');
       return;
     }
-    if (!seleccionados.length) return;
-
-    const timer = setTimeout(async () => {
-      setInventarioError('');
+    let cancelado = false;
+    setInventarioError('');
+    (async () => {
       try {
         const mapas = await Promise.all(
           seleccionados.map(async (id) => {
@@ -96,53 +101,45 @@ export default function OrderApprovalPage() {
             return parseInventoryArrayBuffer(ab);
           })
         );
-        const combinado = combinarInventarios(mapas);
-        const evaluado = evaluarSolicitudes(solicitudesParseadas, combinado, {
-          umbralPorcentaje:     umbral / 100,
-          margenDiasRdd:        margenDias,
-          margenAmbarPorcentaje: margenAmbar / 100,
-          cantidadMaxima,
-          cantidadMinima,
-          codigosExcluidos,
-        });
-        setResultado(evaluado);
-        // Solo agregar al historial si el texto de solicitudes cambió
-        // (no duplicar entradas al ajustar reglas sobre el mismo texto).
-        if (solicitudesParseadas !== solicitudesEnHistorialRef.current) {
-          solicitudesEnHistorialRef.current = solicitudesParseadas;
-          const hora = new Date().toLocaleTimeString('es-MX');
-          setHistorial((prev) => {
-            const nuevo = [...prev, ...evaluado.map((solicitud) => ({ hora, solicitud }))];
-            saveSessionJSON(HISTORIAL_KEY, nuevo);
-            return nuevo;
-          });
-        }
+        if (!cancelado) setInventarioCombinado(combinarInventarios(mapas));
       } catch (err) {
-        setInventarioError(err.message);
+        if (!cancelado) setInventarioError(err.message);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [seleccionados]);
+
+  // ── Efecto 2: evaluación pura (sin I/O) — usa el inventario ya en memoria.
+  // Se dispara al cambiar texto, reglas o cuando el inventario termina de
+  // cargarse. El debounce corto solo absorbe el tiempo de pegado de texto.
+  useEffect(() => {
+    if (!solicitudesParseadas.length) { setResultado([]); return; }
+    if (!inventarioCombinado) return;
+
+    const timer = setTimeout(() => {
+      const evaluado = evaluarSolicitudes(solicitudesParseadas, inventarioCombinado, {
+        umbralPorcentaje:      umbral / 100,
+        margenDiasRdd:         margenDias,
+        margenAmbarPorcentaje: margenAmbar / 100,
+        cantidadMaxima,
+        cantidadMinima,
+        codigosExcluidos,
+      });
+      setResultado(evaluado);
+      // Solo agregar al historial cuando cambia el texto (no al ajustar reglas).
+      if (solicitudesParseadas !== solicitudesEnHistorialRef.current) {
+        solicitudesEnHistorialRef.current = solicitudesParseadas;
+        const hora = new Date().toLocaleTimeString('es-MX');
+        setHistorial((prev) => {
+          const nuevo = [...prev, ...evaluado.map((solicitud) => ({ hora, solicitud }))];
+          saveSessionJSON(HISTORIAL_KEY, nuevo);
+          return nuevo;
+        });
       }
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [solicitudesParseadas, seleccionados, umbral, margenDias, margenAmbar]);
-
-  // Inventario combinado en vivo para BusquedaManual en la toolbar
-  const [inventarioVivo, setInventarioVivo] = useState(null);
-  useEffect(() => {
-    if (!seleccionados.length) { setInventarioVivo(null); return; }
-    let cancelado = false;
-    (async () => {
-      try {
-        const mapas = await Promise.all(
-          seleccionados.map(async (id) => {
-            const ab = await obtenerArchivoReporte(id);
-            return ab ? parseInventoryArrayBuffer(ab) : new Map();
-          })
-        );
-        if (!cancelado) setInventarioVivo(combinarInventarios(mapas));
-      } catch { /* silencioso */ }
-    })();
-    return () => { cancelado = true; };
-  }, [seleccionados]);
+  }, [solicitudesParseadas, inventarioCombinado, umbral, margenDias, margenAmbar, cantidadMaxima, cantidadMinima, codigosExcluidos]);
 
   function handleVaciarHistorial() {
     setHistorial([]);
@@ -207,7 +204,7 @@ export default function OrderApprovalPage() {
         {/* ── Grupo: Búsqueda ── */}
         <div className="ribbon-group">
           <div className="ribbon-group-body">
-            <BusquedaManual inventario={inventarioVivo} />
+            <BusquedaManual inventario={inventarioCombinado} />
           </div>
           <div className="ribbon-group-label">Búsqueda rápida</div>
         </div>
