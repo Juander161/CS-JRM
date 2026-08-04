@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Card from '../../components/Card.jsx';
 import Toolbar from '../../components/Toolbar.jsx';
 import RequestTextInput from './components/RequestTextInput.jsx';
 import InventoryFilesPicker from './components/InventoryFilesPicker.jsx';
 import ThresholdConfig from './components/ThresholdConfig.jsx';
 import EmailIntegrationPanel from './components/EmailIntegrationPanel.jsx';
+import FolderWatchPanel from './components/FolderWatchPanel.jsx';
 import ResultsTabs from './components/ResultsTabs.jsx';
 import BusquedaManual from './components/BusquedaManual.jsx';
 import { parseRequestText } from './utils/parseRequestText.js';
@@ -141,6 +142,13 @@ export default function OrderApprovalPage() {
     return () => clearTimeout(timer);
   }, [solicitudesParseadas, inventarioCombinado, umbral, margenDias, margenAmbar, cantidadMaxima, cantidadMinima, codigosExcluidos]);
 
+  const handleNuevoEmail = useCallback((cuerpo) => {
+    setTextoSolicitud((prev) => {
+      const sep = prev.trim() ? '\n\n' : '';
+      return prev + sep + cuerpo;
+    });
+  }, []);
+
   function handleVaciarHistorial() {
     setHistorial([]);
     removeSessionItem(HISTORIAL_KEY);
@@ -209,9 +217,10 @@ export default function OrderApprovalPage() {
           <div className="ribbon-group-label">Búsqueda rápida</div>
         </div>
 
-        {/* ── Grupo: Correos (Microsoft Graph API) ── */}
+        {/* ── Grupo: Correos (modo automático carpeta + Microsoft Graph API) ── */}
         <div className="ribbon-group">
           <div className="ribbon-group-body">
+            <FolderWatchPanel onNuevoEmail={handleNuevoEmail} />
             <EmailIntegrationPanel
               onCorreosProcesados={(texto) => setTextoSolicitud(texto)}
             />
