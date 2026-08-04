@@ -124,8 +124,8 @@ export default function FolderWatchPanel({ onNuevoEmail }) {
             <>
               <p style={{ margin: '0 0 10px', fontSize: 12, color: '#475569', lineHeight: 1.6 }}>
                 La app revisará la carpeta seleccionada cada 10 segundos.
-                Cualquier archivo <code>.eml</code> nuevo será procesado y su resultado
-                aparecerá automáticamente en la tabla, sin ninguna acción adicional.
+                Cualquier archivo <code>.txt</code> o <code>.eml</code> nuevo será procesado
+                y su resultado aparecerá automáticamente en la tabla, sin ninguna acción adicional.
               </p>
 
               <button
@@ -145,18 +145,19 @@ export default function FolderWatchPanel({ onNuevoEmail }) {
                   ¿Cómo configurar Outlook para guardado automático?
                 </summary>
                 <p style={{ margin: '0 0 4px' }}>
-                  Con una <strong>Regla de Outlook</strong> + macro VBA, cada correo de solicitud
-                  puede guardarse automáticamente como <code>.eml</code> en la carpeta:
+                  Una macro VBA enganchada a la carpeta de Outlook exporta cada correo
+                  nuevo como <code>.txt</code> en la carpeta que vigila la app:
                 </p>
                 <ol style={{ margin: '0 0 6px', paddingLeft: 16, lineHeight: 1.9 }}>
-                  <li><strong>Archivo → Opciones → Centro de confianza → Configuración de macros</strong> → Habilitar macros</li>
-                  <li><strong>Alt+F11</strong> → insertar módulo con macro que guarda el correo en la carpeta deseada</li>
-                  <li><strong>Inicio → Reglas → Crear regla</strong>: cuando llegue correo de [remitente] → ejecutar script (la macro)</li>
-                  <li>Selecciona esa carpeta aquí — listo, nada más que hacer</li>
+                  <li><strong>Archivo → Opciones → Centro de confianza → Configuración de macros</strong> → Habilitar todas las macros</li>
+                  <li><strong>Alt+F11</strong> → doble clic en <code>ThisOutlookSession</code> → pegar la macro <code>ItemAdd</code></li>
+                  <li>Ajustar el nombre de la carpeta de Outlook y la ruta de salida en las constantes</li>
+                  <li>Ejecutar <code>IniciarVigilancia</code> (F5) y seleccionar esa ruta aquí — listo</li>
                 </ol>
                 <p style={{ margin: 0, color: '#94a3b8' }}>
-                  Alternativa sin macros: guarda el correo manualmente como .eml una vez
-                  y la app lo detectará en la siguiente revisión automática.
+                  No se usa la acción “ejecutar script” de las reglas (Microsoft la quitó
+                  en Outlook 365); el evento <code>ItemAdd</code> de la carpeta la reemplaza
+                  y funciona aunque el correo llegue por una regla de servidor.
                 </p>
               </details>
             </>

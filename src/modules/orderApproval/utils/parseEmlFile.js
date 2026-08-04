@@ -170,3 +170,39 @@ export function parseEmlFile(contenido) {
     texto:  extraerTextoDeParte(normalizado),
   };
 }
+
+/**
+ * Parsea el .txt que exporta la macro de Outlook. Formato:
+ *
+ *   From: Nombre <correo@dominio>
+ *   Subject: …
+ *   Date: dd/mm/yyyy hh:mm
+ *   (línea en blanco)
+ *   <cuerpo del correo tal cual>
+ *
+ * Si el archivo NO empieza con una de esas tres cabeceras se toma completo
+ * como cuerpo — así un .txt pegado a mano (que suele arrancar directo con
+ * "PRDF:") no pierde su primera línea al confundirla con una cabecera.
+ */
+export function parseTextoExportado(contenido) {
+  const normalizado = contenido.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  if (!/^(From|Subject|Date):/i.test(normalizado)) {
+    return { de: '', asunto: '', fecha: '', texto: normalizado };
+  }
+
+  const { headers, cuerpo } = separarHeadersCuerpo(normalizado);
+  return {
+    de:     headers['from']    || '',
+    asunto: headers['subject'] || '',
+    fecha:  headers['date']    || '',
+    texto:  cuerpo,
+  };
+}
+
+/** Elige el parser según la extensión del archivo. */
+export function parseArchivoCorreo(nombre, contenido) {
+  return nombre.toLowerCase().endsWith('.txt')
+    ? parseTextoExportado(contenido)
+    : parseEmlFile(contenido);
+}

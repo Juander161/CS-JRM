@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import Card from '../../../components/Card.jsx';
-import { parseEmlFile } from '../utils/parseEmlFile.js';
+import { parseArchivoCorreo } from '../utils/parseEmlFile.js';
 
 export default function RequestTextInput({ valor, onChange }) {
   const [dragging, setDragging]   = useState(false);
@@ -10,15 +10,16 @@ export default function RequestTextInput({ valor, onChange }) {
 
   function cargarEml(file) {
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.eml')) {
-      setEmlError('El archivo debe tener extensión .eml');
+    const nombre = file.name.toLowerCase();
+    if (!nombre.endsWith('.eml') && !nombre.endsWith('.txt')) {
+      setEmlError('El archivo debe tener extensión .eml o .txt');
       return;
     }
     setEmlError('');
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const resultado = parseEmlFile(e.target.result);
+        const resultado = parseArchivoCorreo(file.name, e.target.result);
         setMeta({ de: resultado.de, asunto: resultado.asunto, fecha: resultado.fecha });
         onChange(resultado.texto);
       } catch {
@@ -69,16 +70,16 @@ export default function RequestTextInput({ valor, onChange }) {
         <button
           className="btn-ribbon"
           style={{ fontSize: 11, padding: '2px 8px', minWidth: 'unset', flexDirection: 'row', gap: 4 }}
-          title="Cargar un archivo .eml guardado desde Outlook o Gmail"
+          title="Cargar un archivo .eml o .txt exportado desde Outlook"
           onClick={() => fileInputRef.current?.click()}
         >
           <span>📎</span>
-          <span>Cargar .eml</span>
+          <span>Cargar archivo</span>
         </button>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".eml"
+          accept=".eml,.txt"
           style={{ display: 'none' }}
           onChange={handleFileChange}
         />
@@ -111,7 +112,7 @@ export default function RequestTextInput({ valor, onChange }) {
             height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 13, color: '#2563eb', fontWeight: 600,
           }}>
-            Suelta el archivo .eml aquí
+            Suelta el archivo .eml o .txt aquí
           </div>
         ) : (
           <textarea
@@ -128,7 +129,7 @@ export default function RequestTextInput({ valor, onChange }) {
 
       {!meta && (
         <p style={{ margin: '3px 0 0', fontSize: 10, color: '#94a3b8' }}>
-          También puedes arrastrar y soltar un archivo .eml directamente aquí.
+          También puedes arrastrar y soltar un archivo .eml o .txt directamente aquí.
         </p>
       )}
     </Card>

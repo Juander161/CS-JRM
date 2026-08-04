@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { parseEmlFile } from '../utils/parseEmlFile.js';
+import { parseArchivoCorreo } from '../utils/parseEmlFile.js';
 
 const POLL_MS = 10_000;
+const EXTENSIONES = ['.eml', '.txt'];
+
+function esArchivoCorreo(nombre) {
+  const n = nombre.toLowerCase();
+  return EXTENSIONES.some((ext) => n.endsWith(ext));
+}
 
 /**
- * Vigila una carpeta local en busca de archivos .eml nuevos.
+ * Vigila una carpeta local en busca de archivos .eml / .txt nuevos.
  * Requiere File System Access API (Chrome / Edge).
  * onNuevoEmail(cuerpoTexto, meta) se llama por cada archivo nuevo detectado.
  */
@@ -28,14 +34,14 @@ export function useFolderWatcher(onNuevoEmail) {
     try {
       const nuevos = [];
       for await (const [nombre, entrada] of handle.entries()) {
-        if (entrada.kind !== 'file' || !nombre.toLowerCase().endsWith('.eml')) continue;
+        if (entrada.kind !== 'file' || !esArchivoCorreo(nombre)) continue;
         const archivo = await entrada.getFile();
         const clave   = `${nombre}_${archivo.lastModified}`;
         if (procesadosRef.current.has(clave)) continue;
         procesadosRef.current.add(clave);
 
         const texto  = await archivo.text();
-        const parsed = parseEmlFile(texto);
+        const parsed = parseArchivoCorreo(nombre, texto);
         const meta   = { nombre, de: parsed.de, asunto: parsed.asunto, fecha: parsed.fecha, procesadoEn: new Date() };
         nuevos.push(meta);
         callbackRef.current?.(parsed.texto, meta);
