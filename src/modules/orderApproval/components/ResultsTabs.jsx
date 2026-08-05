@@ -3,6 +3,14 @@ import Card from '../../../components/Card.jsx';
 import Badge from '../../../components/Badge.jsx';
 import TabBar from '../../../components/TabBar.jsx';
 import { construirTablaHtml, construirTablaTexto } from '../utils/buildCopySummary.js';
+import { loadSessionJSON, saveSessionJSON } from '../../../services/storage/sessionStore.js';
+
+// Qué solicitudes ya revisó el usuario. Se guarda por sesión para que al
+// recargar no se pierda el avance cuando hay muchas solicitudes en cola.
+const VISTOS_KEY = 'order-approval-vistos';
+// Espera antes de marcar como vista la pestaña abierta, para que pasar
+// rápido entre pestañas no las marque todas sin haberlas leído.
+const MS_PARA_MARCAR_VISTO = 900;
 
 const TONE_POR_ESTADO = {
   Aprobado:         'success',
@@ -155,7 +163,27 @@ function DetalleItem({ item, onCerrar }) {
   );
 }
 
-function SolicitudPanel({ solicitud }) {
+function BotonVisto({ visto, onToggle }) {
+  return (
+    <button
+      className="secondary"
+      onClick={onToggle}
+      title={visto
+        ? 'Marcar como sin ver para volver a revisarla después'
+        : 'Marcar como vista'}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        color: visto ? '#16a34a' : '#64748b',
+        borderColor: visto ? '#86efac' : undefined,
+      }}
+    >
+      <span>{visto ? '👁' : '○'}</span>
+      <span>{visto ? 'Visto' : 'Sin ver'}</span>
+    </button>
+  );
+}
+
+function SolicitudPanel({ solicitud, visto, onToggleVisto }) {
   const [itemDetalle, setItemDetalle] = useState(null);
 
   // Limpiar detalle al cambiar de solicitud
@@ -176,6 +204,7 @@ function SolicitudPanel({ solicitud }) {
   const acciones = (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
       <Badge tone={TONE_POR_ESTADO[estadoGeneral] || 'neutral'}>{estadoGeneral}</Badge>
+      {onToggleVisto && <BotonVisto visto={visto} onToggle={onToggleVisto} />}
       <BotonCopiar solicitud={solicitud} />
     </div>
   );
@@ -309,6 +338,31 @@ function SolicitudPanel({ solicitud }) {
 export default function ResultsTabs({ solicitudes }) {
   const [activeId, setActiveId]       = useState(null);
   const [descartados, setDescartados] = useState(() => new Set());
+  const [vistos, setVistos]           = useState(() => new Set(loadSessionJSON(VISTOS_KEY, [])));
+  const [soloSinVer, setSoloSinVer]   = useState(false);
+
+  // El seguimiento de visto/sin ver solo aplica a las solicitudes que llegan
+  // solas por el modo automático: las pegadas a mano el usuario acaba de
+  // verlas, así que marcarlas sería ruido.
+  function actualizarVistos(transformar) {
+    setVistos((prev) => {
+      const nuevo = transformar(new Set(prev));
+      saveSessionJSON(VISTOS_KEY, [...nuevo]);
+      return nuevo;
+    });
+  }
+
+  function alternarVisto(clave) {
+    actualizarVistos((set) => {
+      if (set.has(clave)) set.delete(clave); else set.add(clave);
+      return set;
+    });
+  }
+
+  function marcarTodasVistas() {
+    const claves = solicitudes.filter((s) => s.automatica).map(claveDe);
+    actualizarVistos((set) => { claves.forEach((c) => set.add(c)); return set; });
+  }
 
   // En modo automático llegan solicitudes nuevas mientras se está revisando
   // otra: no se reinicia la selección ni se reabren las pestañas cerradas.
@@ -318,10 +372,31 @@ export default function ResultsTabs({ solicitudes }) {
     setActiveId((prev) => (prev && claves.includes(prev) ? prev : claves[0] ?? null));
   }, [solicitudes]);
 
+  const sinVer = solicitudes.filter((s) => s.automatica && !vistos.has(claveDe(s)));
+
+  // Abrir una pestaña la marca como vista tras una pausa corta, igual que el
+  // panel de lectura de un correo.
+  const claveActivaParaMarcar = activeId;
+  useEffect(() => {
+    if (!claveActivaParaMarcar) return;
+    const solicitud = solicitudes.find((s) => claveDe(s) === claveActivaParaMarcar);
+    if (!solicitud?.automatica || vistos.has(claveActivaParaMarcar)) return;
+    const timer = setTimeout(
+      () => actualizarVistos((set) => set.add(claveActivaParaMarcar)),
+      MS_PARA_MARCAR_VISTO
+    );
+    return () => clearTimeout(timer);
+  }, [claveActivaParaMarcar, solicitudes, vistos]);
+
   if (!solicitudes.length) return null;
 
-  const visibles = solicitudes.filter((s) => !descartados.has(claveDe(s)));
-  const activa   = visibles.find((s) => claveDe(s) === activeId) || visibles[0];
+  const noDescartadas = solicitudes.filter((s) => !descartados.has(claveDe(s)));
+  // El filtro nunca esconde la pestaña abierta: se marcará como vista en un
+  // instante y desaparecería bajo el cursor mientras se está leyendo.
+  const visibles = soloSinVer
+    ? noDescartadas.filter((s) => (s.automatica && !vistos.has(claveDe(s))) || claveDe(s) === activeId)
+    : noDescartadas;
+  const activa = visibles.find((s) => claveDe(s) === activeId) || visibles[0];
 
   function handleClose(clave) {
     setDescartados((prev) => new Set(prev).add(clave));
@@ -335,10 +410,19 @@ export default function ResultsTabs({ solicitudes }) {
     <>
       <TabBar
         tabs={visibles.map((s) => {
-          const base = s.sinEncabezado ? 'Consulta rápida' : `BO# ${s.bo}`;
+          const clave    = claveDe(s);
+          const base     = s.sinEncabezado ? 'Consulta rápida' : `BO# ${s.bo}`;
+          const texto    = esRental(s) ? `⚠ ${base}` : base;
+          const pendiente = s.automatica && !vistos.has(clave);
           return {
-            id:       claveDe(s),
-            label:    esRental(s) ? `⚠ ${base}` : base,
+            id:       clave,
+            title:    `${texto}${pendiente ? ' — sin ver' : ''}`,
+            label: pendiente ? (
+              <>
+                <span style={{ color: '#2563eb', marginRight: 4 }}>●</span>
+                <span style={{ fontWeight: 700 }}>{texto}</span>
+              </>
+            ) : texto,
             sublabel: s.automatica
               ? `${formatearHoraLlegada(s.recibidoEn)} · ${s.cliente || `${s.items.length} items`}`
               : s.sinEncabezado ? `${s.items.length} items` : s.cliente,
@@ -348,8 +432,45 @@ export default function ResultsTabs({ solicitudes }) {
         activeId={activa ? claveDe(activa) : null}
         onSelect={setActiveId}
         onClose={handleClose}
+        extra={sinVer.length > 0 || soloSinVer ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+            <span style={{ color: sinVer.length ? '#2563eb' : '#94a3b8', fontWeight: 600 }}>
+              {sinVer.length} sin ver
+            </span>
+            <button
+              onClick={() => setSoloSinVer((v) => !v)}
+              title="Mostrar únicamente las solicitudes que faltan por revisar"
+              style={{
+                fontSize: 11, padding: '2px 8px', cursor: 'pointer', borderRadius: 4,
+                border: `1px solid ${soloSinVer ? '#2563eb' : '#cbd5e1'}`,
+                background: soloSinVer ? '#eff6ff' : 'transparent',
+                color: soloSinVer ? '#2563eb' : '#64748b',
+              }}
+            >
+              {soloSinVer ? '✓ Solo sin ver' : 'Solo sin ver'}
+            </button>
+            {sinVer.length > 0 && (
+              <button
+                onClick={marcarTodasVistas}
+                title="Marcar todas las solicitudes recibidas como vistas"
+                style={{
+                  fontSize: 11, padding: '2px 8px', cursor: 'pointer', borderRadius: 4,
+                  border: '1px solid #cbd5e1', background: 'transparent', color: '#64748b',
+                }}
+              >
+                Marcar todas como vistas
+              </button>
+            )}
+          </div>
+        ) : null}
       />
-      {activa && <SolicitudPanel solicitud={activa} />}
+      {activa && (
+        <SolicitudPanel
+          solicitud={activa}
+          visto={vistos.has(claveDe(activa))}
+          onToggleVisto={activa.automatica ? () => alternarVisto(claveDe(activa)) : undefined}
+        />
+      )}
     </>
   );
 }

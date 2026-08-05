@@ -17,7 +17,9 @@ export default function TabBar({ tabs, activeId, onSelect, onClose, extra, empty
             type="button"
             className={`tab${tab.id === activeId ? ' active' : ''}`}
             onClick={() => onSelect(tab.id)}
-            title={tab.sublabel ? `${tab.label} — ${tab.sublabel}` : tab.label}
+            // `label` puede ser un nodo (p. ej. con indicador de "sin ver"),
+            // así que el tooltip usa `tab.title` cuando viene dado.
+            title={tab.title ?? (tab.sublabel ? `${tab.label} — ${tab.sublabel}` : tab.label)}
           >
             <span className="tab-label">{tab.label}</span>
             {tab.sublabel && <span className="tab-sublabel">{tab.sublabel}</span>}
