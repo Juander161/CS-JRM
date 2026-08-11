@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { parseArchivoCorreo } from '../utils/parseEmlFile.js';
 
 const POLL_MS = 10_000;
-const EXTENSIONES = ['.eml', '.txt'];
+// .json es lo que deja Power Automate; .txt/.eml quedan para la macro de
+// Outlook y la carga manual.
+const EXTENSIONES = ['.json', '.txt', '.eml'];
 
 function esArchivoCorreo(nombre) {
   const n = nombre.toLowerCase();
@@ -40,9 +42,20 @@ export function useFolderWatcher(onNuevoEmail) {
         if (procesadosRef.current.has(clave)) continue;
         procesadosRef.current.add(clave);
 
-        const texto  = await archivo.text();
-        const parsed = parseArchivoCorreo(nombre, texto);
-        const meta   = { nombre, de: parsed.de, asunto: parsed.asunto, fecha: parsed.fecha, procesadoEn: new Date() };
+        const texto = await archivo.text();
+
+        let parsed;
+        try {
+          parsed = parseArchivoCorreo(nombre, texto);
+        } catch {
+          // OneDrive puede entregar el archivo a medio escribir; en ese caso
+          // se descarta la marca para volver a intentarlo en la próxima
+          // revisión en vez de perderlo para siempre.
+          procesadosRef.current.delete(clave);
+          continue;
+        }
+
+        const meta = { nombre, de: parsed.de, asunto: parsed.asunto, fecha: parsed.fecha, procesadoEn: new Date() };
         nuevos.push(meta);
         callbackRef.current?.(parsed.texto, meta);
       }

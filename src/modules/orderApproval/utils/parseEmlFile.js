@@ -7,6 +7,8 @@
 //   - Codificaciones quoted-printable y base64
 //   - Cabeceras codificadas =?UTF-8?B?...?= y =?UTF-8?Q?...?=
 
+import { parseFlowJson } from './flowJson.js';
+
 // ── Decoders ─────────────────────────────────────────────────────────────────
 
 function decoQP(str) {
@@ -202,7 +204,8 @@ export function parseTextoExportado(contenido) {
 
 /** Elige el parser según la extensión del archivo. */
 export function parseArchivoCorreo(nombre, contenido) {
-  return nombre.toLowerCase().endsWith('.txt')
-    ? parseTextoExportado(contenido)
-    : parseEmlFile(contenido);
+  const n = nombre.toLowerCase();
+  if (n.endsWith('.json')) return parseFlowJson(contenido);
+  if (n.endsWith('.txt'))  return parseTextoExportado(contenido);
+  return parseEmlFile(contenido);
 }
