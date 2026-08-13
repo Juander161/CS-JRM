@@ -63,6 +63,36 @@ function limpiarTextoCorreo(texto) {
     .join('\n');
 }
 
+// Un renglón de artículo puede venir partido en dos líneas cuando la
+// descripción es larga y el cliente de correo la envolvió:
+//
+//   Item [2000175922]    Qty [250]    Description [CORD:
+//   STANDARD.INTERTWINED-DOUBLE.AMERICANA-RED/ROYAL BLUE/WHITE.]
+//
+// Buscando línea por línea, ninguna de las dos encaja con ITEM_REGEX y el
+// artículo se pierde: no se evalúa contra inventario y solo aparece como
+// "línea no reconocida". Por eso, antes de parsear, se vuelven a unir las
+// líneas cuya descripción quedó abierta (sin su "]" de cierre).
+function unirLineasDeItem(lineas) {
+  const unidas = [];
+
+  for (let i = 0; i < lineas.length; i++) {
+    let linea = lineas[i];
+    const inicioDesc = linea.search(/Description\s*\[/i);
+
+    if (inicioDesc !== -1) {
+      while (!linea.slice(inicioDesc).includes(']') && i + 1 < lineas.length) {
+        i++;
+        linea += ' ' + lineas[i].trim();
+      }
+    }
+
+    unidas.push(linea);
+  }
+
+  return unidas;
+}
+
 const MESES = {
   ENE: 0, JAN: 0,
   FEB: 1,
@@ -129,7 +159,7 @@ export function parseRequestText(texto) {
     return { solicitudes: [], lineasNoReconocidas: [] };
   }
 
-  const lineas = limpiarTextoCorreo(texto).split(/\r?\n/);
+  const lineas = unirLineasDeItem(limpiarTextoCorreo(texto).split(/\r?\n/));
   const solicitudesCrudas = [];
   const lineasNoReconocidas = [];
   const itemsHuerfanos = []; // items antes del primer encabezado PRDF
